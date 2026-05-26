@@ -148,6 +148,7 @@ export default function Workspace() {
   const [usersList, setUsersList] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [drawerPage, setDrawerPage] = useState<DrawerPage>("materials");
+  const [showDrawerSection, setShowDrawerSection] = useState(false);
   const [materialPresets, setMaterialPresets] = useState<MaterialPreset[]>(DEFAULT_MATERIAL_PRESETS);
   const [presetImportText, setPresetImportText] = useState("");
   const [presetImportError, setPresetImportError] = useState<string | null>(null);
@@ -1099,34 +1100,36 @@ export default function Workspace() {
 
             {/* Hamburger Options Trigger */}
             <button
-              onClick={() => setIsDrawerOpen(true)}
+              onClick={() => {
+                setShowDrawerSection(false);
+                setIsDrawerOpen(true);
+              }}
               className="flex items-center gap-2 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/30 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all focus:outline-none focus:ring-1 focus:ring-emerald-500/20"
             >
               <Menu size={16} className="text-emerald-400" />
-              <span>Options &amp; Presets</span>
+              <span>Menu</span>
             </button>
           </div>
         </div>
       </header>
 
       {/* ---------------------------------------------------- */}
-      {/* SLIDEOUT OPTIONS & IMPORT DRAWER                    */}
+      {/* FLOATING HAMBURGER MENU */}
       {/* ---------------------------------------------------- */}
       {isDrawerOpen && (
         <>
           {/* Backdrop */}
           <div 
-            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[99] transition-opacity duration-200"
+            className="fixed inset-0 bg-slate-950/45 backdrop-blur-[2px] z-[99] transition-opacity duration-200"
             onClick={() => setIsDrawerOpen(false)}
           />
 
-          {/* Drawer Panel */}
-          <div className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-slate-900 border-l border-slate-850 shadow-2xl z-[100] flex flex-col transform transition-transform duration-300 ease-out">
-            {/* Drawer Header */}
-            <div className="p-6 border-b border-slate-850 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Menu className="text-emerald-400" size={18} />
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Presets &amp; Settings</h3>
+          {/* Menu Card */}
+          <div className="fixed right-4 sm:right-6 top-20 sm:top-24 w-[330px] sm:w-[360px] max-h-[80vh] bg-slate-900/98 border border-slate-800 rounded-[28px] shadow-2xl z-[100] flex flex-col overflow-hidden">
+            <div className="px-6 pt-5 pb-4 border-b border-slate-850 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-[0.25em] font-mono">Navigation</p>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider mt-1">Hamburger Menu</h3>
               </div>
               <button
                 onClick={() => setIsDrawerOpen(false)}
@@ -1136,24 +1139,37 @@ export default function Workspace() {
               </button>
             </div>
 
-            {/* Drawer Scrollable Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
               <div className="space-y-2">
-                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Menu</p>
-                <select
-                  value={drawerPage}
-                  onChange={(e) => setDrawerPage(e.target.value as DrawerPage)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-bold uppercase tracking-wider text-slate-200 focus:outline-none"
-                >
-                  <option value="materials">Materials</option>
-                  <option value="history">History</option>
-                  <option value="kerf">Kerf</option>
-                  <option value="account">Account</option>
-                  <option value="data">Data</option>
-                </select>
+                {[
+                  { id: "materials", label: "Materials", icon: Layers },
+                  { id: "history", label: "History", icon: History },
+                  { id: "kerf", label: "Kerf", icon: Wrench },
+                  { id: "account", label: "Account", icon: ShieldCheck },
+                  { id: "data", label: "Data", icon: HardDriveUpload },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => {
+                      setDrawerPage(tab.id as DrawerPage);
+                      setShowDrawerSection(true);
+                    }}
+                    className={`w-full px-3 py-3 rounded-xl border text-sm font-bold tracking-wide flex items-center justify-between transition-all ${
+                      drawerPage === tab.id && showDrawerSection
+                        ? "bg-emerald-500/12 border-emerald-500/45 text-emerald-300"
+                        : "bg-slate-950 border-slate-800 text-slate-200 hover:border-slate-700"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2.5">
+                      <tab.icon size={15} className={drawerPage === tab.id && showDrawerSection ? "text-emerald-300" : "text-slate-400"} />
+                      <span>{tab.label}</span>
+                    </span>
+                    <ChevronRight size={14} className="text-slate-500" />
+                  </button>
+                ))}
               </div>
 
-              {drawerPage === "materials" && (
+              {showDrawerSection && drawerPage === "materials" && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Material Presets</h4>
@@ -1206,7 +1222,7 @@ export default function Workspace() {
                 </div>
               )}
 
-              {drawerPage === "history" && (
+              {showDrawerSection && drawerPage === "history" && (
                 <div className="space-y-3">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Job History</h4>
                   <button onClick={handleSaveCurrentToHistory} className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold uppercase tracking-wider">Save Current Job Snapshot</button>
@@ -1232,7 +1248,7 @@ export default function Workspace() {
                 </div>
               )}
 
-              {drawerPage === "kerf" && (
+              {showDrawerSection && drawerPage === "kerf" && (
                 <div className="space-y-3">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Blade Kerf by Machine</h4>
                   <div className="grid grid-cols-2 gap-2">
@@ -1250,7 +1266,7 @@ export default function Workspace() {
                 </div>
               )}
 
-              {drawerPage === "account" && (
+              {showDrawerSection && drawerPage === "account" && (
                 <div className="space-y-4">
                   <div className="space-y-3">
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Pro License</h4>
@@ -1288,7 +1304,7 @@ export default function Workspace() {
                 </div>
               )}
 
-              {drawerPage === "data" && (
+              {showDrawerSection && drawerPage === "data" && (
                 <div className="space-y-4">
                   <div className="space-y-2 pt-2 border-t border-slate-850">
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Import &amp; Export CSV</h4>
