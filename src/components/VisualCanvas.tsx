@@ -21,12 +21,10 @@ import { BoardLayout, OptimizationResult, CutItem, StockSettings } from "@/utils
 interface VisualCanvasProps {
   result: OptimizationResult;
   unit: string;
-  jobName?: string;
   partsList: { id: string; label?: string }[];
   bladeKerf: number;
   settings: StockSettings;
   onAddScraps: (newScraps: { length: number; width?: number; label?: string }[]) => void;
-  onJobFinished?: (newScraps: { length: number; width?: number; label?: string }[]) => Promise<void> | void;
 }
 
 // Generate consistent background color based on Part ID
@@ -63,12 +61,14 @@ function getLabelSizes(length: number, width?: number) {
   return { dim: "text-[10px] font-bold", label: "text-[8px] opacity-75" };
 }
 
-export function VisualCanvas({ result, unit, jobName, partsList, bladeKerf, settings, onAddScraps, onJobFinished }: VisualCanvasProps) {
+export function VisualCanvas({ result, unit, partsList, bladeKerf, settings, onAddScraps }: VisualCanvasProps) {
   const [offcutsSaved, setOffcutsSaved] = useState(false);
-  const [jobFinishing, setJobFinishing] = useState(false);
 
-  const collectReusableOffcuts = () => {
+  const handleSaveOffcuts = () => {
     const offcuts: { length: number; width?: number; label?: string }[] = [];
+    const materialTag = [settings.materialType?.trim(), settings.thickness?.trim()]
+      .filter(Boolean)
+      .join(" ") || "General Material";
 
     result.boards.forEach((board, bIdx) => {
       if (result.is2D && board.wasteRects) {
@@ -79,7 +79,7 @@ export function VisualCanvas({ result, unit, jobName, partsList, bladeKerf, sett
             offcuts.push({
               length: Math.round(rect.w),
               width: Math.round(rect.h),
-              label: `Board ${bIdx + 1} Offcut`,
+              label: `${materialTag} - Board ${bIdx + 1} Offcut`,
             });
           }
         });
@@ -87,31 +87,15 @@ export function VisualCanvas({ result, unit, jobName, partsList, bladeKerf, sett
         // 1D: save the leftover length
         offcuts.push({
           length: Math.round(board.waste),
-          label: `Board ${bIdx + 1} Offcut`,
+          label: `${materialTag} - Board ${bIdx + 1} Offcut`,
         });
       }
     });
 
-    return offcuts;
-  };
-
-  const handleSaveOffcuts = () => {
-    const offcuts = collectReusableOffcuts();
-    if (offcuts.length === 0) return;
-
-    onAddScraps(offcuts);
-    setOffcutsSaved(true);
-    setTimeout(() => setOffcutsSaved(false), 3000);
-  };
-
-  const handleFinishJob = async () => {
-    if (!onJobFinished || jobFinishing) return;
-    const offcuts = collectReusableOffcuts();
-    setJobFinishing(true);
-    try {
-      await onJobFinished(offcuts);
-    } finally {
-      setJobFinishing(false);
+    if (offcuts.length > 0) {
+      onAddScraps(offcuts);
+      setOffcutsSaved(true);
+      setTimeout(() => setOffcutsSaved(false), 3000);
     }
   };
   // Map partId to color index
@@ -159,7 +143,6 @@ export function VisualCanvas({ result, unit, jobName, partsList, bladeKerf, sett
   // Generate Manifest Text (Markdown/Copy-paste ready)
   const manifestText = useMemo(() => {
     let text = `# ITS MY CUTLIST - WORKSHOP MANIFEST\n\n`;
-    text += `Job: ${jobName?.trim() ? jobName.trim() : "Untitled Job"}\n`;
     text += `Efficiency Score: ${result.efficiencyScore.toFixed(1)}% | Total Waste: ${result.totalWastePercent.toFixed(1)}%\n`;
     text += `Stock Boards Used: ${result.stockBoardsUsed} | Scrap Offcuts Used: ${result.scrapBoardsUsed}\n\n`;
     
@@ -195,7 +178,7 @@ export function VisualCanvas({ result, unit, jobName, partsList, bladeKerf, sett
     }
 
     return text;
-  }, [result, unit, jobName]);
+  }, [result, unit]);
 
   const copyManifestToClipboard = () => {
     navigator.clipboard.writeText(manifestText);
@@ -521,17 +504,6 @@ export function VisualCanvas({ result, unit, jobName, partsList, bladeKerf, sett
                 <Layers size={13} />
                 {offcutsSaved ? "Offcuts Saved ✓" : "Save Offcuts"}
               </button>
-              {onJobFinished && (
-                <button
-                  onClick={handleFinishJob}
-                  disabled={jobFinishing}
-                  className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/20 hover:border-indigo-500/40 text-indigo-400 rounded-lg text-xs font-bold transition-all focus:outline-none flex items-center gap-1.5 disabled:opacity-60"
-                  title="Complete this job: archive history and sync offcuts"
-                >
-                  <Scissors size={13} />
-                  {jobFinishing ? "Finishing..." : "Job Finished"}
-                </button>
-              )}
               <button
                 onClick={copyManifestToClipboard}
                 className="p-2 bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white border border-slate-800 rounded-lg text-xs font-bold transition-all focus:outline-none flex items-center gap-1.5"

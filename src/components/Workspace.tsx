@@ -292,8 +292,12 @@ export default function Workspace() {
       newScraps.forEach((s) => {
         const roundedLength = Math.round(s.length);
         const roundedWidth = s.width ? Math.round(s.width) : undefined;
+        const normalizedLabel = (s.label || "Offcut").trim();
         const existing = updated.find(
-          (item) => item.length === roundedLength && item.width === roundedWidth
+          (item) =>
+            item.length === roundedLength &&
+            item.width === roundedWidth &&
+            (item.label || "Offcut").trim() === normalizedLabel
         );
         if (existing) {
           existing.quantity += 1;
@@ -303,7 +307,7 @@ export default function Workspace() {
             length: roundedLength,
             width: roundedWidth,
             quantity: 1,
-            label: s.label || "Offcut",
+            label: normalizedLabel,
           });
         }
       });

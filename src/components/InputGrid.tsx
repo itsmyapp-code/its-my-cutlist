@@ -676,12 +676,16 @@ export function ScrapPile({ scraps, setScraps, settings }: ScrapPileProps) {
       ? (parseFloat(newWidth) || settings.stockWidth || 0) 
       : undefined;
 
+    const materialLabel = [settings.materialType?.trim(), settings.thickness?.trim()]
+      .filter(Boolean)
+      .join(" ");
+
     const newScrap: Scrap = {
       id: Math.random().toString(36).substr(2, 9),
       length: parseFloat(newLen),
       width: scrapW,
       quantity: parseInt(newQty) || 1,
-      label: newLabel.trim() || undefined,
+      label: newLabel.trim() || materialLabel || undefined,
     };
 
     setScraps([...scraps, newScrap]);
