@@ -29,7 +29,9 @@ import {
   Users,
   History,
   FolderOpen,
-  Trash2
+  Trash2,
+  HardDriveUpload,
+  Wrench
 } from "lucide-react";
 import { BentoGrid, BentoBox } from "./BentoGrid";
 import { MaterialProfilePanel, QuickPasteCLI, PartMatrix, ScrapPile } from "./InputGrid";
@@ -41,17 +43,51 @@ import { doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateD
 import AuthModal from "./AuthModal";
 import { SharedInventory } from "./SharedInventory";
 
+type DrawerPage = "materials" | "history" | "kerf" | "account" | "data";
+
+interface MaterialPreset {
+  id: string;
+  name: string;
+  length: number;
+  width: number;
+  type: string;
+  thickness: string;
+  unit: "mm" | "cm" | "in";
+}
+
 interface JobHistoryEntry {
   id: string;
   createdAt: string;
   title: string;
-  summary: string;
+  customer: string;
+  company: string;
+  operator: string;
   snapshot: {
     settings: StockSettings;
     parts: Part[];
     scraps: Scrap[];
   };
 }
+
+const DEFAULT_MATERIAL_PRESETS: MaterialPreset[] = [
+  { id: "mr-mdf-18", name: "Moisture Resist MDF", length: 2440, width: 1220, type: "MDF", thickness: "18mm", unit: "mm" },
+  { id: "mr-mdf-12", name: "Moisture Resist MDF", length: 2440, width: 1220, type: "MDF", thickness: "12mm", unit: "mm" },
+  { id: "std-ply-18", name: "Birch Ply", length: 2440, width: 1220, type: "Plywood", thickness: "18mm", unit: "mm" },
+  { id: "std-ply-9", name: "Birch Ply", length: 2440, width: 1220, type: "Plywood", thickness: "9mm", unit: "mm" },
+  { id: "osb-11", name: "OSB 3", length: 2440, width: 1220, type: "OSB", thickness: "11mm", unit: "mm" },
+  { id: "chip-18", name: "Chipboard", length: 2440, width: 1220, type: "Chipboard", thickness: "18mm", unit: "mm" },
+  { id: "cls-24", name: "CLS Timber", length: 2400, width: 0, type: "CLS", thickness: "38x89mm", unit: "mm" },
+  { id: "cls-48", name: "CLS Timber", length: 4800, width: 0, type: "CLS", thickness: "38x89mm", unit: "mm" },
+];
+
+const MACHINE_KERF_PRESETS = [
+  { label: "Dewalt DWE7485", value: 2.2 },
+  { label: "Makita MLT100", value: 3.0 },
+  { label: "Festool TS 55", value: 2.2 },
+  { label: "Bosch GTS 10", value: 3.2 },
+  { label: "Evolution R255", value: 2.4 },
+  { label: "Bandsaw Generic", value: 1.5 },
+];
 
 export default function Workspace() {
   // ----------------------------------------------------
@@ -97,8 +133,20 @@ export default function Workspace() {
   const [activationError, setActivationError] = useState<string | null>(null);
   const [usersList, setUsersList] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [drawerPage, setDrawerPage] = useState<DrawerPage>("materials");
+  const [materialPresets, setMaterialPresets] = useState<MaterialPreset[]>(DEFAULT_MATERIAL_PRESETS);
+  const [presetImportText, setPresetImportText] = useState("");
+  const [presetImportError, setPresetImportError] = useState<string | null>(null);
+  const [newPresetName, setNewPresetName] = useState("");
+  const [newPresetType, setNewPresetType] = useState("");
+  const [newPresetThickness, setNewPresetThickness] = useState("");
+  const [newPresetLength, setNewPresetLength] = useState("");
+  const [newPresetWidth, setNewPresetWidth] = useState("");
   const [jobHistory, setJobHistory] = useState<JobHistoryEntry[]>([]);
   const [jobName, setJobName] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [operatorName, setOperatorName] = useState("");
 
   // ----------------------------------------------------
   // 2. LIFECYCLE & LOCALSTORAGE SYNC
@@ -128,15 +176,24 @@ export default function Workspace() {
       try { setScraps(JSON.parse(storedScraps)); } catch (e) {}
     }
 
+    const storedPresets = localStorage.getItem("itsmycut_material_presets");
+    if (storedPresets) {
+      try { setMaterialPresets(JSON.parse(storedPresets)); } catch (e) {}
+    }
+
     const storedHistory = localStorage.getItem("itsmycut_job_history");
     if (storedHistory) {
       try { setJobHistory(JSON.parse(storedHistory)); } catch (e) {}
     }
 
     const storedJobName = localStorage.getItem("itsmycut_job_name");
-    if (storedJobName) {
-      setJobName(storedJobName);
-    }
+    if (storedJobName) setJobName(storedJobName);
+    const storedCustomer = localStorage.getItem("itsmycut_customer_name");
+    if (storedCustomer) setCustomerName(storedCustomer);
+    const storedCompany = localStorage.getItem("itsmycut_company_name");
+    if (storedCompany) setCompanyName(storedCompany);
+    const storedOperator = localStorage.getItem("itsmycut_operator_name");
+    if (storedOperator) setOperatorName(storedOperator);
 
     const storedToken = localStorage.getItem("itsmycut_pro_token");
     const storedKey = localStorage.getItem("itsmycut_pro_key");
@@ -189,13 +246,21 @@ export default function Workspace() {
 
   useEffect(() => {
     if (!mounted) return;
+    localStorage.setItem("itsmycut_material_presets", JSON.stringify(materialPresets));
+  }, [materialPresets, mounted]);
+
+  useEffect(() => {
+    if (!mounted) return;
     localStorage.setItem("itsmycut_job_history", JSON.stringify(jobHistory));
   }, [jobHistory, mounted]);
 
   useEffect(() => {
     if (!mounted) return;
     localStorage.setItem("itsmycut_job_name", jobName);
-  }, [jobName, mounted]);
+    localStorage.setItem("itsmycut_customer_name", customerName);
+    localStorage.setItem("itsmycut_company_name", companyName);
+    localStorage.setItem("itsmycut_operator_name", operatorName);
+  }, [jobName, customerName, companyName, operatorName, mounted]);
 
   // ----------------------------------------------------
   // 3. CORE CALCULATION ENGINE RUN
@@ -320,21 +385,14 @@ export default function Workspace() {
     }
   };
 
-  const handleLoadPreset = (preset: {
-    name: string;
-    length: number;
-    width: number;
-    type: string;
-    thick: string;
-    unit: string;
-  }) => {
+  const handleLoadPreset = (preset: MaterialPreset) => {
     setSettings((prev) => ({
       ...prev,
       stockLength: preset.length,
       stockWidth: preset.width > 0 ? preset.width : undefined,
       materialType: preset.type,
-      thickness: preset.thick,
-      unit: preset.unit as "mm" | "cm" | "in",
+      thickness: preset.thickness,
+      unit: preset.unit,
     }));
     setIsDrawerOpen(false);
   };
@@ -344,6 +402,102 @@ export default function Workspace() {
       ...prev,
       bladeKerf: val,
     }));
+  };
+
+  const handleAddMaterialPreset = () => {
+    const length = parseFloat(newPresetLength);
+    const width = parseFloat(newPresetWidth) || 0;
+    if (!newPresetName.trim() || !newPresetType.trim() || !newPresetThickness.trim() || length <= 0) {
+      return;
+    }
+
+    const preset: MaterialPreset = {
+      id: `preset_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: newPresetName.trim(),
+      type: newPresetType.trim(),
+      thickness: newPresetThickness.trim(),
+      length,
+      width,
+      unit: settings.unit,
+    };
+
+    setMaterialPresets((prev) => [preset, ...prev]);
+    setNewPresetName("");
+    setNewPresetType("");
+    setNewPresetThickness("");
+    setNewPresetLength("");
+    setNewPresetWidth("");
+  };
+
+  const handleImportMaterialPresets = () => {
+    setPresetImportError(null);
+    try {
+      const parsed = JSON.parse(presetImportText);
+      const imported = (Array.isArray(parsed) ? parsed : []).map((p, idx) => ({
+        id: `imported_${Date.now()}_${idx}`,
+        name: String(p.name || "Imported Material"),
+        type: String(p.type || "General"),
+        thickness: String(p.thickness || "Generic"),
+        length: Number(p.length || 0),
+        width: Number(p.width || 0),
+        unit: (p.unit === "cm" || p.unit === "in" ? p.unit : "mm") as "mm" | "cm" | "in",
+      })).filter((p) => p.length > 0);
+
+      if (imported.length === 0) {
+        setPresetImportError("No valid presets found in JSON.");
+        return;
+      }
+
+      setMaterialPresets((prev) => [...imported, ...prev]);
+      setPresetImportText("");
+    } catch (e) {
+      setPresetImportError("Invalid preset JSON. Use an array of preset objects.");
+    }
+  };
+
+  const handleSaveCurrentToHistory = () => {
+    const historyItem: JobHistoryEntry = {
+      id: `job_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      createdAt: new Date().toISOString(),
+      title: jobName.trim() || `${settings.materialType || "Workshop"} Job`,
+      customer: customerName.trim(),
+      company: companyName.trim(),
+      operator: operatorName.trim(),
+      snapshot: {
+        settings: JSON.parse(JSON.stringify(settings)),
+        parts: JSON.parse(JSON.stringify(parts)),
+        scraps: JSON.parse(JSON.stringify(scraps)),
+      },
+    };
+    setJobHistory((prev) => [historyItem, ...prev].slice(0, 75));
+  };
+
+  const handleLoadHistoryEntry = (entryId: string) => {
+    const found = jobHistory.find((h) => h.id === entryId);
+    if (!found) return;
+    setSettings(found.snapshot.settings);
+    setParts(found.snapshot.parts);
+    setScraps(found.snapshot.scraps);
+    setJobName(found.title || "");
+    setCustomerName(found.customer || "");
+    setCompanyName(found.company || "");
+    setOperatorName(found.operator || "");
+    setIsDrawerOpen(false);
+  };
+
+  const handleDeleteHistoryEntry = (entryId: string) => {
+    setJobHistory((prev) => prev.filter((h) => h.id !== entryId));
+  };
+
+  const formatDateTimeGb = (iso: string) => {
+    return new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(iso));
   };
 
   const handleExportWorkspace = () => {
@@ -387,6 +541,9 @@ export default function Workspace() {
       setParts([]);
       setScraps([]);
       setJobName("");
+      setCustomerName("");
+      setCompanyName("");
+      setOperatorName("");
       setSettings({
         stockLength: 2400,
         bladeKerf: 3,
@@ -728,16 +885,21 @@ export default function Workspace() {
   }) => {
     if (!user) return;
     try {
-      await addDoc(collection(db, "offcuts_inventory"), {
-        materialType: offcut.materialType,
-        thickness: offcut.thickness,
-        length: Math.round(offcut.length),
-        width: offcut.width ? Math.round(offcut.width) : 0,
-        quantity: 1,
-        status: "available",
-        createdByUser: user.email,
-        createdAt: new Date().toISOString(),
-      });
+      await Promise.race([
+        addDoc(collection(db, "offcuts_inventory"), {
+          materialType: offcut.materialType,
+          thickness: offcut.thickness,
+          length: Math.round(offcut.length),
+          width: offcut.width ? Math.round(offcut.width) : 0,
+          quantity: 1,
+          status: "available",
+          createdByUser: user.email,
+          createdAt: new Date().toISOString(),
+        }),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("Timed out publishing offcut. Check sync/login and retry.")), 10000);
+        }),
+      ]);
       await fetchCentralInventory(user);
       setCloudSyncSuccess("Manual offcut published to workshop stock!");
       setTimeout(() => setCloudSyncSuccess(null), 3000);
@@ -746,96 +908,6 @@ export default function Workspace() {
       setCloudSyncError("Failed to publish manual offcut.");
       setTimeout(() => setCloudSyncError(null), 3000);
     }
-  };
-
-  const saveCurrentJobToHistory = () => {
-    const timestamp = new Date().toISOString();
-    const title = jobName.trim()
-      ? jobName.trim()
-      : settings.materialType?.trim()
-      ? `${settings.materialType} Job`
-      : "Workshop Job";
-    const summary = `${parts.length} part rows | ${optimizationResult.boards.length} boards | ${settings.stockLength}${settings.unit}${settings.stockWidth ? ` x ${settings.stockWidth}${settings.unit}` : ""}`;
-
-    const entry: JobHistoryEntry = {
-      id: `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      createdAt: timestamp,
-      title,
-      summary,
-      snapshot: {
-        settings: JSON.parse(JSON.stringify(settings)),
-        parts: JSON.parse(JSON.stringify(parts)),
-        scraps: JSON.parse(JSON.stringify(scraps)),
-      },
-    };
-
-    setJobHistory((prev) => [entry, ...prev].slice(0, 50));
-  };
-
-  const handleLoadHistoryJob = (entryId: string) => {
-    const entry = jobHistory.find((item) => item.id === entryId);
-    if (!entry) return;
-
-    setSettings(entry.snapshot.settings);
-    setParts(entry.snapshot.parts);
-    setScraps(entry.snapshot.scraps);
-    setCloudSyncSuccess("History job loaded into workspace.");
-    setTimeout(() => setCloudSyncSuccess(null), 3000);
-  };
-
-  const handleDeleteHistoryJob = (entryId: string) => {
-    setJobHistory((prev) => prev.filter((item) => item.id !== entryId));
-  };
-
-  const formatHistoryDate = (isoDate: string) => {
-    const date = new Date(isoDate);
-    return new Intl.DateTimeFormat("en-GB", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(date);
-  };
-
-  const handleFinishJob = async (offcuts: { length: number; width?: number; label?: string }[]) => {
-    saveCurrentJobToHistory();
-
-    if (offcuts.length > 0) {
-      handleAddScraps(offcuts);
-    }
-
-    if (user && offcuts.length > 0) {
-      setCloudSyncing(true);
-      try {
-        for (const offcut of offcuts) {
-          await addDoc(collection(db, "offcuts_inventory"), {
-            materialType: settings.materialType || "General Board",
-            thickness: settings.thickness || "Generic",
-            length: Math.round(offcut.length),
-            width: offcut.width ? Math.round(offcut.width) : 0,
-            quantity: 1,
-            status: "available",
-            createdByUser: user.email,
-            createdAt: new Date().toISOString(),
-            source: "job-finished",
-          });
-        }
-        await fetchCentralInventory(user);
-      } catch (err: any) {
-        console.error("Finish job publish error:", err);
-        setCloudSyncError("Job saved to history, but shared offcut publish failed.");
-        setTimeout(() => setCloudSyncError(null), 4000);
-      } finally {
-        setCloudSyncing(false);
-      }
-    }
-
-    setCloudSyncSuccess(
-      `Job finished. Saved to history${offcuts.length > 0 ? ` and synced ${offcuts.length} offcuts.` : "."}`
-    );
-    setTimeout(() => setCloudSyncSuccess(null), 3500);
   };
 
   const is2DMode = !!(settings.stockWidth && settings.stockWidth > 0);
@@ -949,407 +1021,185 @@ export default function Workspace() {
             </div>
 
             {/* Drawer Scrollable Content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              
-              {/* Section 1: Presets */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">1. Material Presets</h4>
-                  <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono font-bold">1-Click Load</span>
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  Instantly configure board sizes, thicknesses, and material profiles.
-                </p>
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              <div className="grid grid-cols-5 gap-2">
+                {[
+                  { id: "materials", label: "Materials", icon: Layers },
+                  { id: "history", label: "History", icon: History },
+                  { id: "kerf", label: "Kerf", icon: Wrench },
+                  { id: "account", label: "Account", icon: ShieldCheck },
+                  { id: "data", label: "Data", icon: HardDriveUpload },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setDrawerPage(tab.id as DrawerPage)}
+                    className={`px-2 py-2 rounded-lg border text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 transition-all ${
+                      drawerPage === tab.id ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300" : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    <tab.icon size={11} />
+                    <span className="hidden sm:inline">{tab.label}</span>
+                  </button>
+                ))}
+              </div>
 
-                {/* Sub-section: 2D Sheet Presets */}
-                <div className="space-y-2">
-                  <span className="block text-xs font-bold text-slate-400 uppercase tracking-wide">Sheet Materials (2D Planar)</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { name: "MDF 18mm", length: 2440, width: 1220, type: "MDF", thick: "18mm", unit: "mm" },
-                      { name: "MDF 12mm", length: 2440, width: 1220, type: "MDF", thick: "12mm", unit: "mm" },
-                      { name: "MDF 6mm", length: 2440, width: 1220, type: "MDF", thick: "6mm", unit: "mm" },
-                      { name: "Plywood 18mm", length: 2440, width: 1220, type: "Plywood", thick: "18mm", unit: "mm" },
-                      { name: "Plywood 12mm", length: 2440, width: 1220, type: "Plywood", thick: "12mm", unit: "mm" },
-                      { name: "Plywood 9mm", length: 2440, width: 1220, type: "Plywood", thick: "9mm", unit: "mm" },
-                      { name: "Euro Ply 18mm", length: 2500, width: 1250, type: "Euro Plywood", thick: "18mm", unit: "mm" },
-                      { name: "OSB 11mm", length: 2440, width: 1220, type: "OSB", thick: "11mm", unit: "mm" },
-                      { name: "Chipboard 18mm", length: 2440, width: 1220, type: "Chipboard", thick: "18mm", unit: "mm" },
-                      { name: "Hardboard 3mm", length: 2440, width: 1220, type: "Hardboard", thick: "3mm", unit: "mm" },
-                    ].map((preset, idx) => (
+              {drawerPage === "materials" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Material Presets</h4>
+                    <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono font-bold">Load &amp; Close</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {materialPresets.map((preset) => (
                       <button
-                        key={idx}
+                        key={preset.id}
                         onClick={() => handleLoadPreset(preset)}
-                        className="p-2.5 bg-slate-950 hover:bg-slate-850 hover:border-emerald-500/40 border border-slate-850 text-left rounded-xl transition-all group focus:outline-none"
+                        className="p-2.5 bg-slate-950 hover:bg-slate-850 border border-slate-850 hover:border-emerald-500/40 text-left rounded-xl transition-all"
                       >
-                        <span className="block text-sm font-bold text-slate-200 group-hover:text-emerald-400 transition-colors">{preset.name}</span>
-                        <span className="block text-xs text-slate-500 font-mono mt-0.5">
-                          {preset.length} × {preset.width} {preset.unit}
-                        </span>
+                        <span className="block text-sm font-bold text-slate-200">{preset.name}</span>
+                        <span className="block text-[10px] text-slate-500 font-mono">Type: {preset.type}</span>
+                        <span className="block text-[10px] text-slate-500 font-mono">Thickness: {preset.thickness}</span>
+                        <span className="block text-[10px] text-slate-500 font-mono">Size: {preset.length}{preset.width > 0 ? ` x ${preset.width}` : ""} {preset.unit}</span>
                       </button>
                     ))}
                   </div>
-                </div>
 
-                {/* Sub-section: 1D Length Presets */}
-                <div className="space-y-2 pt-2">
-                  <span className="block text-xs font-bold text-slate-400 uppercase tracking-wide">Timber &amp; Planks (1D Linear)</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { name: "CLS Timber 2.4m", length: 2400, width: 0, type: "CLS Timber", thick: "38x89mm", unit: "mm" },
-                      { name: "CLS Timber 3.0m", length: 3000, width: 0, type: "CLS Timber", thick: "38x89mm", unit: "mm" },
-                      { name: "CLS Timber 4.8m", length: 4800, width: 0, type: "CLS Timber", thick: "38x89mm", unit: "mm" },
-                      { name: "Sawn Batten 2.4m", length: 2400, width: 0, type: "Sawn Batten", thick: "25x50mm", unit: "mm" },
-                      { name: "Sawn Batten 3.6m", length: 3600, width: 0, type: "Sawn Batten", thick: "25x50mm", unit: "mm" },
-                      { name: "Metal Section 6m", length: 6000, width: 0, type: "Steel Profile", thick: "3mm Wall", unit: "mm" },
-                    ].map((preset, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleLoadPreset(preset)}
-                        className="p-2.5 bg-slate-955 hover:bg-slate-850 hover:border-indigo-500/40 border border-slate-850 text-left rounded-xl transition-all group focus:outline-none"
-                      >
-                        <span className="block text-sm font-bold text-slate-200 group-hover:text-indigo-400 transition-colors">{preset.name}</span>
-                        <span className="block text-xs text-slate-500 font-mono mt-0.5">
-                          {preset.length} {preset.unit} length
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 2: Blade Kerf Presets */}
-              <div className="space-y-3 pt-2 border-t border-slate-850">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">2. Blade Kerf Presets</h4>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { label: "Table Saw", value: 3.2 },
-                    { label: "Thin Kerf", value: 2.4 },
-                    { label: "Bandsaw", value: 1.5 },
-                  ].map((preset, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleUpdateKerf(preset.value)}
-                      className={`p-2 bg-slate-950 hover:bg-slate-850 border rounded-lg text-center transition-all focus:outline-none ${
-                        settings.bladeKerf === preset.value ? "border-emerald-500 text-white" : "border-slate-850 text-slate-400"
-                      }`}
-                    >
-                      <span className="block text-[9px] font-bold truncate">{preset.label}</span>
-                      <span className="block text-xs font-mono font-bold text-emerald-450 mt-0.5">{preset.value}mm</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Section 3: Pro License Center */}
-              <div className="space-y-3 pt-2 border-t border-slate-850">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">3. Pro License Status</h4>
-                {license.isPro ? (
-                  <div className="p-4 bg-slate-955/60 border border-slate-850 rounded-xl space-y-3">
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck size={18} className="text-emerald-400" />
-                      <span className="text-xs font-bold text-white uppercase tracking-wider">Pro License Active</span>
-                    </div>
-                    <div className="font-mono text-[10px] space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">Key:</span>
-                        <span className="text-slate-300">{license.licenseKey?.slice(0, 12)}...</span>
-                      </div>
-                      {license.deviceCount !== undefined && (
-                        <div className="flex justify-between">
-                          <span className="text-slate-500">Devices:</span>
-                          <span className="text-slate-300">{license.deviceCount} / 3</span>
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={handleDeactivateLicense}
-                      className="w-full py-1.5 bg-rose-955/20 hover:bg-rose-955/40 border border-rose-900/30 text-rose-400 hover:text-rose-350 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all focus:outline-none"
-                    >
-                      Deactivate License
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <p className="text-[11px] text-slate-500">
-                      Unlock unlimited parts lists and custom blade/board settings presets.
-                    </p>
-                    <form onSubmit={handleActivateLicense} className="space-y-2">
-                      <input
-                        type="text"
-                        placeholder="ENTER LICENSE KEY"
-                        value={licenseKeyInput}
-                        onChange={(e) => setLicenseKeyInput(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500/40 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono text-center placeholder:text-slate-650 uppercase tracking-widest focus:outline-none"
-                      />
-                      {activationError && <p className="text-[10px] text-rose-450 font-mono">{activationError}</p>}
-                      {activationSuccess && <p className="text-[10px] text-emerald-400 font-mono">{activationSuccess}</p>}
-                      <button
-                        type="submit"
-                        disabled={activationLoading}
-                        className="w-full py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/25 transition-all flex items-center justify-center gap-1.5 focus:outline-none disabled:opacity-50"
-                      >
-                        <Sparkles size={14} />
-                        {activationLoading ? "Validating..." : "Activate Pro Key"}
-                      </button>
-                    </form>
-                  </div>
-                )}
-              </div>
-
-              {/* Section: Firebase Cloud Sync */}
-              <div className="space-y-3 pt-2 border-t border-slate-850">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Firebase Team &amp; Cloud</h4>
-                {user ? (
-                  <div className="p-4 bg-slate-955/60 border border-slate-850 rounded-xl space-y-3">
-                    <div className="flex items-center gap-2 text-emerald-400">
-                      <Cloud size={16} className="animate-pulse" />
-                      <span className="text-xs font-bold uppercase tracking-wider text-white">Workshop Sync Connected</span>
-                    </div>
-                    <div className="font-mono text-[10px] space-y-1.5 text-slate-350">
-                      <div className="flex justify-between">
-                        <span>Account:</span>
-                        <span className="text-slate-200 truncate max-w-[180px]" title={user.email ?? undefined}>{user.email}</span>
-                      </div>
-                    </div>
-
+                  <div className="space-y-2 pt-2 border-t border-slate-850">
+                    <h5 className="text-[11px] font-bold text-slate-350 uppercase tracking-wider">Add New Material</h5>
                     <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={handleSaveJobToCloud}
-                        disabled={cloudSyncing}
-                        className="py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-400 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1 focus:outline-none disabled:opacity-50"
-                      >
-                        {cloudSyncing ? <RefreshCw size={12} className="animate-spin" /> : <Cloud size={12} />}
-                        Save Job
-                      </button>
-                      <button
-                        onClick={handleLoadJobFromCloud}
-                        disabled={cloudSyncing}
-                        className="py-2 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 text-indigo-400 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1 focus:outline-none disabled:opacity-50"
-                      >
-                        {cloudSyncing ? <RefreshCw size={12} className="animate-spin" /> : <Cloud size={12} />}
-                        Load Job
-                      </button>
+                      <input value={newPresetName} onChange={(e) => setNewPresetName(e.target.value)} placeholder="Name e.g. Moisture Resist MDF" className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none" />
+                      <input value={newPresetType} onChange={(e) => setNewPresetType(e.target.value)} placeholder="Type e.g. MDF" className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none" />
+                      <input value={newPresetThickness} onChange={(e) => setNewPresetThickness(e.target.value)} placeholder="Thickness e.g. 18mm" className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none" />
+                      <input value={newPresetLength} onChange={(e) => setNewPresetLength(e.target.value)} placeholder={`Length (${settings.unit})`} className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-200 font-mono focus:outline-none" />
+                      <input value={newPresetWidth} onChange={(e) => setNewPresetWidth(e.target.value)} placeholder={`Width (${settings.unit}, optional)`} className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-200 font-mono focus:outline-none col-span-2" />
                     </div>
+                    <button onClick={handleAddMaterialPreset} className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-xs font-bold uppercase tracking-wider">Add Material Preset</button>
+                  </div>
 
-                    <button
-                      onClick={handlePublishOffcuts}
-                      disabled={cloudSyncing}
-                      className="w-full py-2 bg-emerald-500 hover:bg-emerald-450 text-slate-955 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none disabled:opacity-50"
-                    >
-                      <Database size={12} />
-                      Publish Current Offcuts to Stock
-                    </button>
+                  <div className="space-y-2 pt-2 border-t border-slate-850">
+                    <h5 className="text-[11px] font-bold text-slate-350 uppercase tracking-wider">Import Material Presets</h5>
+                    <textarea
+                      value={presetImportText}
+                      onChange={(e) => setPresetImportText(e.target.value)}
+                      placeholder='[{"name":"MR MDF","type":"MDF","thickness":"18mm","length":2440,"width":1220,"unit":"mm"}]'
+                      className="w-full h-24 bg-slate-950 border border-slate-800 rounded-lg p-2 text-[10px] text-slate-300 font-mono focus:outline-none"
+                    />
+                    {presetImportError && <p className="text-[10px] text-rose-400">{presetImportError}</p>}
+                    <button onClick={handleImportMaterialPresets} className="w-full py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold text-white uppercase tracking-wider">Import Presets JSON</button>
+                  </div>
+                </div>
+              )}
 
-                    <button
-                      onClick={handleSignOut}
-                      className="w-full py-1.5 bg-rose-955/20 hover:bg-rose-955/40 border border-rose-900/30 text-rose-400 hover:text-rose-350 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all focus:outline-none"
-                    >
-                      Sign Out
-                    </button>
-
-                    {/* Admin User Management Dashboard */}
-                    {(user.email === "martin@cozens.me.uk" || user.email === "martincozens@gmail.com") && (
-                      <div className="mt-4 pt-3 border-t border-slate-800 space-y-2.5">
-                        <div className="flex items-center justify-between text-emerald-400">
-                          <div className="flex items-center gap-1.5">
-                            <Users size={12} />
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-200">Workshop Admin Console</span>
+              {drawerPage === "history" && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Job History</h4>
+                  <button onClick={handleSaveCurrentToHistory} className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold uppercase tracking-wider">Save Current Job Snapshot</button>
+                  {jobHistory.length === 0 ? (
+                    <p className="text-[11px] text-slate-500">No history saved yet.</p>
+                  ) : (
+                    <div className="max-h-[420px] overflow-y-auto space-y-2">
+                      {jobHistory.map((entry) => (
+                        <div key={entry.id} className="p-2.5 bg-slate-950 border border-slate-850 rounded-lg space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-bold text-slate-200 truncate">{entry.title}</p>
+                            <p className="text-[10px] text-slate-500 font-mono shrink-0">{formatDateTimeGb(entry.createdAt)}</p>
                           </div>
-                          <button 
-                            onClick={fetchUsersList}
-                            className="p-1 hover:bg-slate-850 text-slate-400 hover:text-white rounded transition-colors"
-                            title="Reload users"
-                          >
-                            <RefreshCw size={10} className={loadingUsers ? "animate-spin" : ""} />
-                          </button>
+                          <p className="text-[10px] text-slate-500">Customer: {entry.customer || "-"} | Operator: {entry.operator || "-"}</p>
+                          <div className="flex gap-2">
+                            <button onClick={() => handleLoadHistoryEntry(entry.id)} className="flex-1 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded text-[10px] text-slate-200 font-bold uppercase flex items-center justify-center gap-1"><FolderOpen size={11} />Load</button>
+                            <button onClick={() => handleDeleteHistoryEntry(entry.id)} className="px-2 py-1.5 bg-rose-950/30 hover:bg-rose-900/40 border border-rose-900/40 rounded text-[10px] text-rose-300 font-bold"><Trash2 size={12} /></button>
+                          </div>
                         </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
-                        <p className="text-[9px] text-slate-500 leading-normal font-medium">
-                          Manage registered accounts and adjust free/pro license tiers.
-                        </p>
+              {drawerPage === "kerf" && (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Blade Kerf by Machine</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {MACHINE_KERF_PRESETS.map((preset) => (
+                      <button
+                        key={preset.label}
+                        onClick={() => handleUpdateKerf(preset.value)}
+                        className={`p-2.5 border rounded-lg text-left transition-all ${settings.bladeKerf === preset.value ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300" : "bg-slate-950 border-slate-850 text-slate-300 hover:border-slate-700"}`}
+                      >
+                        <span className="block text-[11px] font-bold">{preset.label}</span>
+                        <span className="block text-[10px] font-mono mt-0.5">{preset.value} {settings.unit}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-                        {loadingUsers ? (
-                          <div className="py-4 text-center">
-                            <span className="text-[9px] font-mono text-slate-500">Querying database...</span>
-                          </div>
-                        ) : usersList.length === 0 ? (
-                          <button
-                            onClick={fetchUsersList}
-                            type="button"
-                            className="w-full py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-350 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all"
-                          >
-                            Load Registered Users
-                          </button>
-                        ) : (
-                          <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                            {usersList.map((usr) => (
-                              <div key={usr.uid} className="p-2 bg-slate-950 border border-slate-850 rounded-lg space-y-1.5">
-                                <div className="flex justify-between items-baseline min-w-0">
-                                  <span className="text-[9px] font-mono text-slate-200 truncate max-w-[130px]" title={usr.email}>{usr.email}</span>
-                                  <span className="text-[8px] font-mono text-slate-650">
-                                    {usr.createdAt ? new Date(usr.createdAt).toLocaleDateString('en-GB') : ""}
-                                  </span>
-                                </div>
-                                <div className="flex justify-between items-center">
-                                  <span className="text-[8px] font-mono text-slate-500">Tier: <strong className="text-emerald-450 uppercase">{usr.accessLevel || "free"}</strong></span>
-                                  <div className="flex gap-1">
-                                    <button
-                                      onClick={() => handleUpdateUserAccess(usr.uid, "free")}
-                                      type="button"
-                                      className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${usr.accessLevel === "free" || !usr.accessLevel ? "bg-slate-800 text-slate-350" : "bg-slate-900 text-slate-600 hover:text-slate-400"}`}
-                                    >
-                                      Free
-                                    </button>
-                                    <button
-                                      onClick={() => handleUpdateUserAccess(usr.uid, "pro")}
-                                      type="button"
-                                      className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${usr.accessLevel === "pro" ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-slate-900 text-slate-600 hover:text-emerald-400"}`}
-                                    >
-                                      Pro
-                                    </button>
-                                    <button
-                                      onClick={() => handleUpdateUserAccess(usr.uid, "developer")}
-                                      type="button"
-                                      className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${usr.accessLevel === "developer" ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30" : "bg-slate-900 text-slate-600 hover:text-indigo-400"}`}
-                                    >
-                                      Dev
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+              {drawerPage === "account" && (
+                <div className="space-y-4">
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Pro License</h4>
+                    {license.isPro ? (
+                      <div className="p-3 bg-slate-955/60 border border-slate-850 rounded-xl space-y-2">
+                        <p className="text-xs font-bold text-emerald-400">Pro Active</p>
+                        <p className="text-[10px] text-slate-400 font-mono">{license.licenseKey?.slice(0, 12)}...</p>
+                        <button onClick={handleDeactivateLicense} className="w-full py-1.5 bg-rose-955/20 border border-rose-900/30 text-rose-400 rounded-lg text-[10px] font-bold uppercase">Deactivate</button>
                       </div>
+                    ) : (
+                      <form onSubmit={handleActivateLicense} className="space-y-2">
+                        <input type="text" value={licenseKeyInput} onChange={(e) => setLicenseKeyInput(e.target.value)} placeholder="IMC-XXXX-XXXX-XXXX" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs font-mono text-slate-200 focus:outline-none" />
+                        {activationError && <p className="text-[10px] text-rose-400">{activationError}</p>}
+                        <button type="submit" disabled={activationLoading} className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-xs font-bold uppercase">{activationLoading ? "Validating..." : "Activate Pro Key"}</button>
+                      </form>
                     )}
                   </div>
-                ) : (
-                  <div className="space-y-3">
-                    <p className="text-[11px] text-slate-500">
-                      Sign in with your workshop account to backup your Cutlist, share stock inventory, and collaborate with your team.
-                    </p>
-                    <button
-                      onClick={() => {
-                        setIsDrawerOpen(false);
-                        setIsAuthModalOpen(true);
-                      }}
-                      className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-450 text-slate-955 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none"
-                    >
-                      <Cloud size={14} />
-                      Connect Workshop Account
-                    </button>
-                  </div>
-                )}
-              </div>
 
-              {/* Section 4: Import/Export Backup */}
-              <div className="space-y-3 pt-2 border-t border-slate-850">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">4. Import &amp; Export Job</h4>
-                  <span className="text-[9px] text-slate-500 font-mono">Local JSON</span>
-                </div>
-                <p className="text-[11px] text-slate-500">
-                  Backup current configuration or copy parts lists and scraps between devices.
-                </p>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleExportWorkspace}
-                    className="flex-1 py-2 px-3 bg-slate-950 hover:bg-slate-855 border border-slate-850 hover:border-emerald-500/20 text-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none"
-                  >
-                    {copiedBackup ? <CheckCircle size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                    {copiedBackup ? "Copied!" : "Export Job JSON"}
-                  </button>
-                </div>
-
-                <div className="space-y-1.5 pt-2">
-                  <textarea
-                    placeholder="Paste job JSON here to import..."
-                    value={importJsonText}
-                    onChange={(e) => setImportJsonText(e.target.value)}
-                    className="w-full h-20 bg-slate-950 border border-slate-850 focus:border-emerald-500/40 rounded-xl p-2.5 text-[10px] text-slate-300 font-mono focus:outline-none resize-none"
-                  />
-                  {importError && <p className="text-[10px] text-rose-455">{importError}</p>}
-                  {importSuccess && <p className="text-[10px] text-emerald-400">{importSuccess}</p>}
-                  
-                  <button
-                    onClick={handleImportWorkspace}
-                    className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-955 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none"
-                  >
-                    Load JSON Job
-                  </button>
-                </div>
-              </div>
-
-              {/* Section 5: Job History */}
-              <div className="space-y-3 pt-2 border-t border-slate-850">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
-                    <History size={12} />
-                    Job History
-                  </h4>
-                  <span className="text-[9px] text-slate-500 font-mono">Last 50 jobs</span>
-                </div>
-
-                {jobHistory.length === 0 ? (
-                  <div className="p-3 bg-slate-950 border border-slate-850 rounded-xl text-[10px] text-slate-500">
-                    No saved jobs yet. Use Job Finished in the canvas to archive jobs.
-                  </div>
-                ) : (
-                  <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
-                    {jobHistory.map((entry) => (
-                      <div key={entry.id} className="p-2.5 bg-slate-950 border border-slate-850 rounded-xl space-y-1.5">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="text-[11px] font-bold text-slate-200 truncate">{entry.title}</p>
-                            <p className="text-[9px] text-slate-500 font-mono">{formatHistoryDate(entry.createdAt)}</p>
-                          </div>
-                          <button
-                            onClick={() => handleDeleteHistoryJob(entry.id)}
-                            className="p-1 text-slate-600 hover:text-rose-400 rounded transition-colors"
-                            title="Delete history item"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                  <div className="space-y-3 pt-2 border-t border-slate-850">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Workshop Sync</h4>
+                    {user ? (
+                      <div className="space-y-2">
+                        <p className="text-[11px] text-slate-400">Signed in as {user.email}</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button onClick={handleSaveJobToCloud} disabled={cloudSyncing} className="py-2 bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 rounded-lg text-[10px] font-bold uppercase">Save Job</button>
+                          <button onClick={handleLoadJobFromCloud} disabled={cloudSyncing} className="py-2 bg-indigo-500/10 border border-indigo-500/25 text-indigo-400 rounded-lg text-[10px] font-bold uppercase">Load Job</button>
                         </div>
-                        <p className="text-[10px] text-slate-500">{entry.summary}</p>
-                        <button
-                          onClick={() => handleLoadHistoryJob(entry.id)}
-                          className="w-full py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1"
-                        >
-                          <FolderOpen size={11} />
-                          Load Job
-                        </button>
+                        <button onClick={handlePublishOffcuts} disabled={cloudSyncing} className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-[10px] font-bold uppercase">Publish Offcuts</button>
+                        <button onClick={handleSignOut} className="w-full py-1.5 bg-rose-955/20 border border-rose-900/30 text-rose-400 rounded-lg text-[10px] font-bold uppercase">Sign Out</button>
                       </div>
-                    ))}
+                    ) : (
+                      <button onClick={() => { setIsDrawerOpen(false); setIsAuthModalOpen(true); }} className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold uppercase">Connect Workshop Account</button>
+                    )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
-              {/* Section 6: Help Guide */}
-              <div className="space-y-2 pt-2 border-t border-slate-850">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Documentation</h4>
-                <Link
-                  href="/help"
-                  onClick={() => setIsDrawerOpen(false)}
-                  className="w-full py-2.5 bg-slate-950 hover:bg-slate-850 border border-slate-850 hover:border-emerald-500/20 text-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none"
-                >
-                  <HelpCircle size={14} className="text-emerald-400" />
-                  View Help &amp; User Guide
-                </Link>
-              </div>
+              {drawerPage === "data" && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">PDF Report Details</h4>
+                    <input value={jobName} onChange={(e) => setJobName(e.target.value)} placeholder="Job name" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
+                    <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
+                    <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Company doing the cutting" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
+                    <input value={operatorName} onChange={(e) => setOperatorName(e.target.value)} placeholder="Operator" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
+                  </div>
 
-              {/* Section 7: Clear Workspace */}
-              <div className="pt-2 border-t border-slate-850">
-                <button
-                  onClick={handleClearAll}
-                  className="w-full py-2 bg-rose-955/20 hover:bg-rose-955/40 border border-rose-900/30 text-rose-350 hover:text-rose-300 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none"
-                >
-                  Clear All Data
-                </button>
-              </div>
+                  <div className="space-y-2 pt-2 border-t border-slate-850">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Import &amp; Export JSON</h4>
+                    <button onClick={handleExportWorkspace} className="w-full py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-lg text-xs font-bold text-slate-200 uppercase">{copiedBackup ? "Copied" : "Export Job JSON"}</button>
+                    <textarea value={importJsonText} onChange={(e) => setImportJsonText(e.target.value)} placeholder="Paste job JSON here to import..." className="w-full h-24 bg-slate-950 border border-slate-800 rounded-lg p-2 text-[10px] font-mono text-slate-300 focus:outline-none" />
+                    {importError && <p className="text-[10px] text-rose-400">{importError}</p>}
+                    {importSuccess && <p className="text-[10px] text-emerald-400">{importSuccess}</p>}
+                    <button onClick={handleImportWorkspace} className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-xs font-bold uppercase">Load JSON Job</button>
+                  </div>
 
+                  <div className="space-y-2 pt-2 border-t border-slate-850">
+                    <Link href="/help" onClick={() => setIsDrawerOpen(false)} className="w-full py-2.5 bg-slate-950 hover:bg-slate-850 border border-slate-850 text-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5">
+                      <HelpCircle size={14} className="text-emerald-400" />
+                      View Help &amp; User Guide
+                    </Link>
+                    <button onClick={handleClearAll} className="w-full py-2 bg-rose-955/20 hover:bg-rose-955/40 border border-rose-900/30 text-rose-350 rounded-xl text-xs font-bold uppercase tracking-wider">Clear All Data</button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </>
@@ -1372,16 +1222,6 @@ export default function Workspace() {
               <p className="text-xs text-slate-500 font-medium mt-1">
                 Configure material profiles and optimize cutting layouts with live waste feedback.
               </p>
-            </div>
-            <div className="w-full sm:w-[340px]">
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Job Name</label>
-              <input
-                type="text"
-                value={jobName}
-                onChange={(e) => setJobName(e.target.value)}
-                placeholder="e.g. Kitchen Revamp - Unit 4"
-                className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl px-3 py-2 text-sm text-white focus:outline-none"
-              />
             </div>
           </div>
 
@@ -1463,12 +1303,10 @@ export default function Workspace() {
               <VisualCanvas
                 result={optimizationResult}
                 unit={settings.unit}
-                jobName={jobName}
                 partsList={parts}
                 bladeKerf={settings.bladeKerf}
                 settings={settings}
                 onAddScraps={handleAddScraps}
-                onJobFinished={handleFinishJob}
               />
             </BentoBox>
           </div>
@@ -1612,17 +1450,26 @@ export default function Workspace() {
         {/* Job Header */}
         <div className="border-b-4 border-black pb-4 mb-6">
           <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-2xl font-black tracking-tight uppercase">ITS MY CUTLIST</h1>
-              <p className="text-sm font-semibold uppercase tracking-wider text-slate-700">Workshop Cutting Instructions</p>
-              <p className="text-xs font-mono text-slate-700 mt-1">
-                Job: {jobName.trim() || "Untitled Job"}
-              </p>
+            <div className="flex items-start gap-3">
+              <img src="/cutlist-logo.png" alt="Its My Cutlist Logo" className="h-12 w-12 object-contain" />
+              <div>
+                <h1 className="text-2xl font-black tracking-tight uppercase">ITS MY CUTLIST</h1>
+                <p className="text-sm font-semibold uppercase tracking-wider text-slate-700">Workshop Cutting Instructions</p>
+                <p className="text-xs font-mono text-slate-700">Job: {jobName || "Untitled Job"}</p>
+              </div>
             </div>
             <div className="text-right text-xs font-mono">
               <p className="font-bold">Date: {new Date().toLocaleDateString("en-GB")}</p>
+              <p className="font-bold">Time: {new Date().toLocaleTimeString("en-GB", { hour12: false })}</p>
               <p>Generated via Client App</p>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mt-3 text-xs font-mono">
+            <p>Customer: <strong>{customerName || "-"}</strong></p>
+            <p>Company Cutting: <strong>{companyName || "-"}</strong></p>
+            <p>Operator: <strong>{operatorName || "-"}</strong></p>
+            <p>Job Ref: <strong>{jobName || "-"}</strong></p>
           </div>
 
           <div className="grid grid-cols-4 gap-4 mt-4 pt-4 border-t border-slate-200">
