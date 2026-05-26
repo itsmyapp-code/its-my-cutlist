@@ -1,5 +1,7 @@
 {
-  "projects": {},
+  "projects": {
+    "default": "its-my-cutlist"
+  },
   "targets": {},
   "etags": {}
 }
