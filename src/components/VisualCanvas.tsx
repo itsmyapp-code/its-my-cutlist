@@ -67,8 +67,6 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
       ...prev,
       [key]: !prev[key],
     }));
-
-    // Simple feedback sound or animation trigger could go here
   };
 
   const handleResetCuts = () => {
@@ -87,20 +85,32 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
     
     result.boards.forEach((board, bIdx) => {
       const typeLabel = board.type === "scrap" ? "Scrap Board" : "Stock Board";
-      text += `### Board ${bIdx + 1} [${typeLabel} - ${board.originalLength}${unit}]\n`;
+      const dimText = result.is2D 
+        ? `${board.originalLength}x${board.originalWidth}${unit}` 
+        : `${board.originalLength}${unit}`;
+      text += `### Board ${bIdx + 1} [${typeLabel} - ${dimText}]\n`;
       const cutDetails = board.cuts.map((c, cIdx) => {
         const label = c.label ? ` (${c.label})` : "";
-        return `Cut ${cIdx + 1}: ${c.length}${unit}${label}`;
+        const cutDim = result.is2D 
+          ? `${c.length}x${c.width}${unit}` 
+          : `${c.length}${unit}`;
+        return `Cut ${cIdx + 1}: ${cutDim}${label}`;
       });
       text += `${cutDetails.join(", ")}\n`;
-      text += `Leftover Waste/Offcut to save: ${board.waste.toFixed(1)}${unit}\n\n`;
+      const wasteVal = result.is2D 
+        ? `${board.waste.toFixed(0)}${unit}²` 
+        : `${board.waste.toFixed(0)}${unit}`;
+      text += `Leftover Waste/Offcut: ${wasteVal}\n\n`;
     });
     
     if (result.unplacedParts.length > 0) {
       text += `### UNPLACED PARTS (Too long for standard stock):\n`;
       result.unplacedParts.forEach((p) => {
         const label = p.label ? ` (${p.label})` : "";
-        text += `- ${p.quantity}x ${p.length}${unit}${label}\n`;
+        const partDim = result.is2D 
+          ? `${p.length}x${p.width || 0}${unit}` 
+          : `${p.length}${unit}`;
+        text += `- ${p.quantity}x ${partDim}${label}\n`;
       });
     }
 
@@ -161,16 +171,16 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
           <div className="text-right">
             <span className="text-slate-500 block text-[9px] uppercase tracking-wider">Boards</span>
             <span className="text-white font-bold text-sm">
-              {result.stockBoardsUsed} Stock / {result.scrapBoardsUsed} Scrap
+              {result.stockBoardsUsed} Stock {result.scrapBoardsUsed > 0 && `/ ${result.scrapBoardsUsed} Scrap`}
             </span>
           </div>
         </div>
       </div>
 
       {/* ---------------------------------------------------- */}
-      {/* LAYOUT BOARDS TRACK LIST                             */}
+      {/* LAYOUT BOARDS LIST                                   */}
       {/* ---------------------------------------------------- */}
-      <div className="flex-1 overflow-y-auto space-y-4 pr-1 min-h-[300px]">
+      <div className="flex-1 overflow-y-auto space-y-6 pr-1 min-h-[300px]">
         {result.boards.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-600 p-8 text-center border border-dashed border-slate-800 rounded-2xl">
             <HelpCircle size={36} className="mb-3 opacity-30 text-slate-400" />
@@ -184,7 +194,7 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
             const isScrap = board.type === "scrap";
             
             return (
-              <div key={board.id} className="space-y-1.5">
+              <div key={board.id} className="space-y-2">
                 {/* Board Label Header */}
                 <div className="flex justify-between items-center text-xs">
                   <div className="flex items-center gap-2">
@@ -199,85 +209,142 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
                       {isScrap ? "Scrap Offcut" : "Stock Board"}
                     </span>
                     <span className="text-slate-500 font-mono">
-                      Size: {board.originalLength}{unit}
+                      Size: {board.originalLength}{result.is2D ? ` x ${board.originalWidth}` : ""} {unit}
                     </span>
                   </div>
                   <div className="text-slate-500 font-mono text-[11px]">
-                    Waste: {board.waste.toFixed(1)}{unit} ({((board.waste / board.originalLength) * 100).toFixed(1)}%)
+                    {result.is2D ? (
+                      <>Waste Area: {board.waste.toFixed(0)}{unit}² ({((board.waste / (board.originalLength * board.originalWidth)) * 100).toFixed(1)}%)</>
+                    ) : (
+                      <>Waste: {board.waste.toFixed(1)}{unit} ({((board.waste / board.originalLength) * 100).toFixed(1)}%)</>
+                    )}
                   </div>
                 </div>
 
-                {/* VISUAL LAYOUT TRACK (1D PROGRESS BAR) */}
-                <div className="relative h-10 w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-900 flex items-stretch">
-                  {board.cuts.map((cut, cutIdx) => {
-                    const cutWidth = (cut.length / board.originalLength) * 100;
-                    const isChecked = checkedCuts[`${board.id}_${cutIdx}`];
-                    const isActive = nextCutToExecute && nextCutToExecute.boardId === board.id && nextCutToExecute.cutIdx === cutIdx;
-                    
-                    // Style determination
-                    let bgStyle = isChecked 
-                      ? "bg-emerald-500 text-emerald-950 border-emerald-400" 
-                      : partColorMap[cut.partId] || "bg-slate-700 text-slate-100 border-slate-600";
-                    
-                    return (
-                      <React.Fragment key={cutIdx}>
-                        {/* Cut block */}
+                {/* 2D RENDERING MODE */}
+                {result.is2D ? (
+                  <div 
+                    style={{ aspectRatio: `${board.originalLength} / ${board.originalWidth}` }}
+                    className="relative w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-900 shadow-inner"
+                  >
+                    {/* Visual gap helper message if empty */}
+                    {board.cuts.length === 0 && (
+                      <div className="absolute inset-0 flex items-center justify-center text-slate-700 text-xs italic">
+                        Empty sheet
+                      </div>
+                    )}
+
+                    {board.cuts.map((cut, cutIdx) => {
+                      const isChecked = checkedCuts[`${board.id}_${cutIdx}`];
+                      const isActive = nextCutToExecute && nextCutToExecute.boardId === board.id && nextCutToExecute.cutIdx === cutIdx;
+                      
+                      let bgStyle = isChecked 
+                        ? "bg-emerald-500 text-emerald-950 border-emerald-400" 
+                        : partColorMap[cut.partId] || "bg-slate-700 text-slate-100 border-slate-600";
+
+                      return (
                         <div
-                          style={{ width: `${cutWidth}%` }}
+                          key={cutIdx}
+                          style={{
+                            left: `${((cut.x || 0) / board.originalLength) * 100}%`,
+                            top: `${((cut.y || 0) / board.originalWidth) * 100}%`,
+                            width: `${((cut.w || cut.length) / board.originalLength) * 100}%`,
+                            height: `${((cut.h || cut.width || 1) / board.originalWidth) * 100}%`,
+                          }}
                           onClick={() => isSwipeMode && handleToggleCut(board.id, cutIdx)}
-                          className={`relative border-r border-slate-950 flex flex-col justify-center px-2 select-none transition-all duration-300 group ${bgStyle} ${
+                          className={`absolute border border-slate-950/40 flex flex-col justify-center items-center p-1 select-none transition-all duration-300 group ${bgStyle} ${
                             isSwipeMode ? "cursor-pointer" : ""
                           } ${
                             isActive && isSwipeMode ? "ring-2 ring-amber-400 ring-inset animate-pulse font-extrabold z-10" : ""
                           }`}
                         >
-                          <div className="text-[10px] font-bold tracking-tight truncate leading-none">
-                            {cut.length}{unit}
+                          <div className="text-[10px] font-extrabold tracking-tight truncate leading-none">
+                            {cut.length}×{cut.width}
                           </div>
                           {cut.label && (
-                            <div className={`text-[8px] font-medium truncate leading-none mt-0.5 opacity-80 uppercase font-mono`}>
+                            <div className="text-[8px] font-semibold truncate leading-none mt-0.5 opacity-90 uppercase font-mono max-w-full">
                               {cut.label}
                             </div>
                           )}
-
-                          {/* Swipe overlay checklist symbol */}
                           {isChecked && (
                             <div className="absolute top-1 right-1 bg-slate-950/70 p-0.5 rounded-full text-emerald-400">
                               <Check size={8} strokeWidth={3} />
                             </div>
                           )}
-
-                          {/* Highlight indicator overlay */}
                           {isActive && isSwipeMode && (
-                            <span className="absolute top-0.5 left-1 text-[8px] font-mono text-amber-300 tracking-widest font-extrabold animate-bounce uppercase">
-                              Next Cut
+                            <span className="absolute top-1 left-1 text-[7px] font-mono text-amber-300 font-extrabold animate-bounce uppercase">
+                              Next
                             </span>
                           )}
                         </div>
-
-                        {/* Thin Kerf cut indicator */}
-                        {bladeKerf > 0 && (
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* 1D PROGRESS BAR RENDERING */
+                  <div className="relative h-10 w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-900 flex items-stretch">
+                    {board.cuts.map((cut, cutIdx) => {
+                      const cutWidth = (cut.length / board.originalLength) * 100;
+                      const isChecked = checkedCuts[`${board.id}_${cutIdx}`];
+                      const isActive = nextCutToExecute && nextCutToExecute.boardId === board.id && nextCutToExecute.cutIdx === cutIdx;
+                      
+                      let bgStyle = isChecked 
+                        ? "bg-emerald-500 text-emerald-950 border-emerald-400" 
+                        : partColorMap[cut.partId] || "bg-slate-700 text-slate-100 border-slate-600";
+                      
+                      return (
+                        <React.Fragment key={cutIdx}>
                           <div
-                            style={{ width: `${(bladeKerf / board.originalLength) * 100}%` }}
-                            className="bg-slate-900 border-r border-slate-950 flex items-center justify-center shrink-0"
-                            title={`Blade Kerf Cut (${bladeKerf}${unit})`}
-                          />
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
+                            style={{ width: `${cutWidth}%` }}
+                            onClick={() => isSwipeMode && handleToggleCut(board.id, cutIdx)}
+                            className={`relative border-r border-slate-950 flex flex-col justify-center px-2 select-none transition-all duration-300 group ${bgStyle} ${
+                              isSwipeMode ? "cursor-pointer" : ""
+                            } ${
+                              isActive && isSwipeMode ? "ring-2 ring-amber-400 ring-inset animate-pulse font-extrabold z-10" : ""
+                            }`}
+                          >
+                            <div className="text-[10px] font-bold tracking-tight truncate leading-none">
+                              {cut.length}{unit}
+                            </div>
+                            {cut.label && (
+                              <div className="text-[8px] font-medium truncate leading-none mt-0.5 opacity-80 uppercase font-mono">
+                                {cut.label}
+                              </div>
+                            )}
+                            {isChecked && (
+                              <div className="absolute top-1 right-1 bg-slate-950/70 p-0.5 rounded-full text-emerald-400">
+                                <Check size={8} strokeWidth={3} />
+                              </div>
+                            )}
+                            {isActive && isSwipeMode && (
+                              <span className="absolute top-0.5 left-1 text-[8px] font-mono text-amber-300 tracking-widest font-extrabold animate-bounce uppercase">
+                                Next Cut
+                              </span>
+                            )}
+                          </div>
 
-                  {/* WASTE BLOCK AT END */}
-                  {board.waste > 0 && (
-                    <div
-                      style={{ width: `${(board.waste / board.originalLength) * 100}%` }}
-                      className="bg-slate-900/60 border-l border-slate-900 flex flex-col justify-center items-end px-3 shrink-0 text-right text-slate-600 font-mono text-[9px]"
-                    >
-                      <span className="font-bold">Waste</span>
-                      <span>{board.waste.toFixed(0)}{unit}</span>
-                    </div>
-                  )}
-                </div>
+                          {bladeKerf > 0 && (
+                            <div
+                              style={{ width: `${(bladeKerf / board.originalLength) * 100}%` }}
+                              className="bg-slate-900 border-r border-slate-950 flex items-center justify-center shrink-0"
+                              title={`Blade Kerf Cut (${bladeKerf}${unit})`}
+                            />
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+
+                    {board.waste > 0 && (
+                      <div
+                        style={{ width: `${(board.waste / board.originalLength) * 100}%` }}
+                        className="bg-slate-900/60 border-l border-slate-900 flex flex-col justify-center items-end px-3 shrink-0 text-right text-slate-600 font-mono text-[9px]"
+                      >
+                        <span className="font-bold">Waste</span>
+                        <span>{board.waste.toFixed(0)}{unit}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })
@@ -291,20 +358,25 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
         <div className="p-3.5 bg-rose-500/10 border border-rose-500/25 rounded-xl space-y-2">
           <div className="flex items-center gap-2 text-rose-400 font-bold text-xs">
             <AlertCircle size={15} />
-            <span>Unplaced Cuts (Exceeds board length)</span>
+            <span>Unplaced Cuts (Exceeds board length or height constraints)</span>
           </div>
           <div className="flex flex-wrap gap-2 text-xs font-mono">
-            {result.unplacedParts.map((p) => (
-              <span key={p.id} className="bg-rose-950/60 border border-rose-900 text-rose-300 px-2.5 py-1 rounded-lg">
-                {p.quantity}x {p.length}{unit} {p.label ? `(${p.label})` : ""}
-              </span>
-            ))}
+            {result.unplacedParts.map((p) => {
+              const partDim = result.is2D 
+                ? `${p.length}x${p.width || 0}${unit}` 
+                : `${p.length}${unit}`;
+              return (
+                <span key={p.id} className="bg-rose-950/60 border border-rose-900 text-rose-300 px-2.5 py-1 rounded-lg">
+                  {p.quantity}x {partDim} {p.label ? `(${p.label})` : ""}
+                </span>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* ---------------------------------------------------- */}
-      {/* BENTO BOX 6: MANIFEST ACTIONS & TEXTBOX              */}
+      {/* MANIFEST ACTIONS & TEXTBOX                           */}
       {/* ---------------------------------------------------- */}
       {result.boards.length > 0 && (
         <div className="border-t border-slate-800/80 pt-5 space-y-4">
@@ -338,8 +410,14 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
           <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 max-h-[160px] overflow-y-auto">
             <pre className="text-[11px] text-slate-400 font-mono whitespace-pre-wrap leading-relaxed">
               {result.boards.map((board, bIdx) => {
-                const cutsText = board.cuts.map(c => `${c.length}${unit}${c.label ? ` (${c.label})` : ""}`).join(", then cut ");
-                return `Board ${bIdx + 1}: Cut ${cutsText}. Leftover offcut to save: ${board.waste.toFixed(1)}${unit}.\n`;
+                const cutsText = board.cuts.map(c => {
+                  const dimText = result.is2D ? `${c.length}×${c.width}` : `${c.length}`;
+                  return `${dimText}${unit}${c.label ? ` (${c.label})` : ""}`;
+                }).join(", then cut ");
+                const wasteVal = result.is2D 
+                  ? `${board.waste.toFixed(0)}${unit}²` 
+                  : `${board.waste.toFixed(0)}${unit}`;
+                return `Board ${bIdx + 1}: Cut ${cutsText}. Leftover: ${wasteVal}.\n`;
               }).join("")}
             </pre>
           </div>

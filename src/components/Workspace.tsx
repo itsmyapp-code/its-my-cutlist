@@ -317,7 +317,7 @@ export default function Workspace() {
               setParts={setParts}
               isPro={license.isPro}
               onUpgradeTrigger={() => setIsUpgradeModalOpen(true)}
-              unit={settings.unit}
+              settings={settings}
             />
           </BentoBox>
 
@@ -332,7 +332,7 @@ export default function Workspace() {
             <ScrapPile
               scraps={scraps}
               setScraps={setScraps}
-              unit={settings.unit}
+              settings={settings}
             />
           </BentoBox>
         </div>

@@ -61,15 +61,16 @@ export async function POST(req: Request) {
 
     const key = licenseKey.trim().toUpperCase();
 
-    // Accept IMC- keys for validation
-    if (!key.startsWith("IMC-")) {
+    // Accept IMC- keys or email addresses for validation
+    const isEmail = key.includes("@");
+    if (!key.startsWith("IMC-") && !isEmail) {
       return NextResponse.json(
-        { error: "Invalid license key format. Keys must start with 'IMC-'" },
+        { error: "Invalid license key format. Keys must start with 'IMC-' or be a registered email address." },
         { status: 400 }
       );
     }
 
-    // Initialize key record if not exists (allows dynamic testing of new keys starting with IMC-)
+    // Initialize key record if not exists (allows dynamic testing of new keys/emails)
     if (!activationsDb[key]) {
       activationsDb[key] = [];
     }

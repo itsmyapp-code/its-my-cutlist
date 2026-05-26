@@ -48,18 +48,18 @@ export function BentoBox({
             </div>
           )}
           <div>
-            <h2 className="text-sm font-bold text-white tracking-wide uppercase">
+            <h2 className="text-lg font-bold text-white tracking-wide uppercase">
               {title}
             </h2>
             {subtitle && (
-              <p className="text-xs text-slate-500 font-medium">
+              <p className="text-sm text-slate-400 font-medium mt-0.5">
                 {subtitle}
               </p>
             )}
           </div>
         </div>
         {badge && (
-          <span className={`text-[10px] font-mono font-bold tracking-wider uppercase px-2 py-0.5 rounded-full ${getBadgeStyles()}`}>
+          <span className={`text-xs font-mono font-bold tracking-wider uppercase px-2.5 py-0.5 rounded-full ${getBadgeStyles()}`}>
             {badge}
           </span>
         )}
