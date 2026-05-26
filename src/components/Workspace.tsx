@@ -26,7 +26,10 @@ import {
   LogOut,
   RefreshCw,
   Database,
-  Users
+  Users,
+  History,
+  FolderOpen,
+  Trash2
 } from "lucide-react";
 import { BentoGrid, BentoBox } from "./BentoGrid";
 import { MaterialProfilePanel, QuickPasteCLI, PartMatrix, ScrapPile } from "./InputGrid";
@@ -37,6 +40,18 @@ import { onAuthStateChanged, User, signOut } from "firebase/auth";
 import { doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateDoc } from "firebase/firestore";
 import AuthModal from "./AuthModal";
 import { SharedInventory } from "./SharedInventory";
+
+interface JobHistoryEntry {
+  id: string;
+  createdAt: string;
+  title: string;
+  summary: string;
+  snapshot: {
+    settings: StockSettings;
+    parts: Part[];
+    scraps: Scrap[];
+  };
+}
 
 export default function Workspace() {
   // ----------------------------------------------------
@@ -82,6 +97,8 @@ export default function Workspace() {
   const [activationError, setActivationError] = useState<string | null>(null);
   const [usersList, setUsersList] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [jobHistory, setJobHistory] = useState<JobHistoryEntry[]>([]);
+  const [jobName, setJobName] = useState("");
 
   // ----------------------------------------------------
   // 2. LIFECYCLE & LOCALSTORAGE SYNC
@@ -109,6 +126,16 @@ export default function Workspace() {
     const storedScraps = localStorage.getItem("itsmycut_scraps");
     if (storedScraps) {
       try { setScraps(JSON.parse(storedScraps)); } catch (e) {}
+    }
+
+    const storedHistory = localStorage.getItem("itsmycut_job_history");
+    if (storedHistory) {
+      try { setJobHistory(JSON.parse(storedHistory)); } catch (e) {}
+    }
+
+    const storedJobName = localStorage.getItem("itsmycut_job_name");
+    if (storedJobName) {
+      setJobName(storedJobName);
     }
 
     const storedToken = localStorage.getItem("itsmycut_pro_token");
@@ -159,6 +186,16 @@ export default function Workspace() {
     if (!mounted) return;
     localStorage.setItem("itsmycut_scraps", JSON.stringify(scraps));
   }, [scraps, mounted]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    localStorage.setItem("itsmycut_job_history", JSON.stringify(jobHistory));
+  }, [jobHistory, mounted]);
+
+  useEffect(() => {
+    if (!mounted) return;
+    localStorage.setItem("itsmycut_job_name", jobName);
+  }, [jobName, mounted]);
 
   // ----------------------------------------------------
   // 3. CORE CALCULATION ENGINE RUN
@@ -349,6 +386,7 @@ export default function Workspace() {
     if (confirm("Are you sure you want to delete all parts, scraps, and reset settings? This cannot be undone.")) {
       setParts([]);
       setScraps([]);
+      setJobName("");
       setSettings({
         stockLength: 2400,
         bladeKerf: 3,
@@ -708,6 +746,96 @@ export default function Workspace() {
       setCloudSyncError("Failed to publish manual offcut.");
       setTimeout(() => setCloudSyncError(null), 3000);
     }
+  };
+
+  const saveCurrentJobToHistory = () => {
+    const timestamp = new Date().toISOString();
+    const title = jobName.trim()
+      ? jobName.trim()
+      : settings.materialType?.trim()
+      ? `${settings.materialType} Job`
+      : "Workshop Job";
+    const summary = `${parts.length} part rows | ${optimizationResult.boards.length} boards | ${settings.stockLength}${settings.unit}${settings.stockWidth ? ` x ${settings.stockWidth}${settings.unit}` : ""}`;
+
+    const entry: JobHistoryEntry = {
+      id: `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      createdAt: timestamp,
+      title,
+      summary,
+      snapshot: {
+        settings: JSON.parse(JSON.stringify(settings)),
+        parts: JSON.parse(JSON.stringify(parts)),
+        scraps: JSON.parse(JSON.stringify(scraps)),
+      },
+    };
+
+    setJobHistory((prev) => [entry, ...prev].slice(0, 50));
+  };
+
+  const handleLoadHistoryJob = (entryId: string) => {
+    const entry = jobHistory.find((item) => item.id === entryId);
+    if (!entry) return;
+
+    setSettings(entry.snapshot.settings);
+    setParts(entry.snapshot.parts);
+    setScraps(entry.snapshot.scraps);
+    setCloudSyncSuccess("History job loaded into workspace.");
+    setTimeout(() => setCloudSyncSuccess(null), 3000);
+  };
+
+  const handleDeleteHistoryJob = (entryId: string) => {
+    setJobHistory((prev) => prev.filter((item) => item.id !== entryId));
+  };
+
+  const formatHistoryDate = (isoDate: string) => {
+    const date = new Date(isoDate);
+    return new Intl.DateTimeFormat("en-GB", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date);
+  };
+
+  const handleFinishJob = async (offcuts: { length: number; width?: number; label?: string }[]) => {
+    saveCurrentJobToHistory();
+
+    if (offcuts.length > 0) {
+      handleAddScraps(offcuts);
+    }
+
+    if (user && offcuts.length > 0) {
+      setCloudSyncing(true);
+      try {
+        for (const offcut of offcuts) {
+          await addDoc(collection(db, "offcuts_inventory"), {
+            materialType: settings.materialType || "General Board",
+            thickness: settings.thickness || "Generic",
+            length: Math.round(offcut.length),
+            width: offcut.width ? Math.round(offcut.width) : 0,
+            quantity: 1,
+            status: "available",
+            createdByUser: user.email,
+            createdAt: new Date().toISOString(),
+            source: "job-finished",
+          });
+        }
+        await fetchCentralInventory(user);
+      } catch (err: any) {
+        console.error("Finish job publish error:", err);
+        setCloudSyncError("Job saved to history, but shared offcut publish failed.");
+        setTimeout(() => setCloudSyncError(null), 4000);
+      } finally {
+        setCloudSyncing(false);
+      }
+    }
+
+    setCloudSyncSuccess(
+      `Job finished. Saved to history${offcuts.length > 0 ? ` and synced ${offcuts.length} offcuts.` : "."}`
+    );
+    setTimeout(() => setCloudSyncSuccess(null), 3500);
   };
 
   const is2DMode = !!(settings.stockWidth && settings.stockWidth > 0);
@@ -1154,9 +1282,54 @@ export default function Workspace() {
                 </div>
               </div>
 
-              {/* Section 5: Help Guide */}
+              {/* Section 5: Job History */}
+              <div className="space-y-3 pt-2 border-t border-slate-850">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                    <History size={12} />
+                    Job History
+                  </h4>
+                  <span className="text-[9px] text-slate-500 font-mono">Last 50 jobs</span>
+                </div>
+
+                {jobHistory.length === 0 ? (
+                  <div className="p-3 bg-slate-950 border border-slate-850 rounded-xl text-[10px] text-slate-500">
+                    No saved jobs yet. Use Job Finished in the canvas to archive jobs.
+                  </div>
+                ) : (
+                  <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                    {jobHistory.map((entry) => (
+                      <div key={entry.id} className="p-2.5 bg-slate-950 border border-slate-850 rounded-xl space-y-1.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-[11px] font-bold text-slate-200 truncate">{entry.title}</p>
+                            <p className="text-[9px] text-slate-500 font-mono">{formatHistoryDate(entry.createdAt)}</p>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteHistoryJob(entry.id)}
+                            className="p-1 text-slate-600 hover:text-rose-400 rounded transition-colors"
+                            title="Delete history item"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-slate-500">{entry.summary}</p>
+                        <button
+                          onClick={() => handleLoadHistoryJob(entry.id)}
+                          className="w-full py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-300 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1"
+                        >
+                          <FolderOpen size={11} />
+                          Load Job
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Section 6: Help Guide */}
               <div className="space-y-2 pt-2 border-t border-slate-850">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">5. Documentation</h4>
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Documentation</h4>
                 <Link
                   href="/help"
                   onClick={() => setIsDrawerOpen(false)}
@@ -1167,7 +1340,7 @@ export default function Workspace() {
                 </Link>
               </div>
 
-              {/* Section 6: Clear Workspace */}
+              {/* Section 7: Clear Workspace */}
               <div className="pt-2 border-t border-slate-850">
                 <button
                   onClick={handleClearAll}
@@ -1199,6 +1372,16 @@ export default function Workspace() {
               <p className="text-xs text-slate-500 font-medium mt-1">
                 Configure material profiles and optimize cutting layouts with live waste feedback.
               </p>
+            </div>
+            <div className="w-full sm:w-[340px]">
+              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Job Name</label>
+              <input
+                type="text"
+                value={jobName}
+                onChange={(e) => setJobName(e.target.value)}
+                placeholder="e.g. Kitchen Revamp - Unit 4"
+                className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl px-3 py-2 text-sm text-white focus:outline-none"
+              />
             </div>
           </div>
 
@@ -1280,10 +1463,12 @@ export default function Workspace() {
               <VisualCanvas
                 result={optimizationResult}
                 unit={settings.unit}
+                jobName={jobName}
                 partsList={parts}
                 bladeKerf={settings.bladeKerf}
                 settings={settings}
                 onAddScraps={handleAddScraps}
+                onJobFinished={handleFinishJob}
               />
             </BentoBox>
           </div>
@@ -1430,9 +1615,12 @@ export default function Workspace() {
             <div>
               <h1 className="text-2xl font-black tracking-tight uppercase">ITS MY CUTLIST</h1>
               <p className="text-sm font-semibold uppercase tracking-wider text-slate-700">Workshop Cutting Instructions</p>
+              <p className="text-xs font-mono text-slate-700 mt-1">
+                Job: {jobName.trim() || "Untitled Job"}
+              </p>
             </div>
             <div className="text-right text-xs font-mono">
-              <p className="font-bold">Date: {new Date().toLocaleDateString()}</p>
+              <p className="font-bold">Date: {new Date().toLocaleDateString("en-GB")}</p>
               <p>Generated via Client App</p>
             </div>
           </div>
