@@ -44,7 +44,7 @@ import { doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateD
 import AuthModal from "./AuthModal";
 import { SharedInventory } from "./SharedInventory";
 
-type DrawerPage = "materials" | "history" | "kerf" | "account" | "data";
+type DrawerPage = "materials" | "history" | "kerf" | "account" | "data" | "developer";
 
 interface MaterialPreset {
   id: string;
@@ -149,6 +149,7 @@ export default function Workspace() {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [drawerPage, setDrawerPage] = useState<DrawerPage>("materials");
   const [showDrawerSection, setShowDrawerSection] = useState(false);
+  const [userDeviceEdits, setUserDeviceEdits] = useState<Record<string, string>>({});
   const [materialPresets, setMaterialPresets] = useState<MaterialPreset[]>(DEFAULT_MATERIAL_PRESETS);
   const [presetImportText, setPresetImportText] = useState("");
   const [presetImportError, setPresetImportError] = useState<string | null>(null);
@@ -162,6 +163,11 @@ export default function Workspace() {
   const [customerName, setCustomerName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [operatorName, setOperatorName] = useState("");
+
+  const isDeveloperUser = !!(
+    user &&
+    (user.email === "martin@cozens.me.uk" || user.email === "martincozens@gmail.com")
+  );
 
   // ----------------------------------------------------
   // 2. LIFECYCLE & LOCALSTORAGE SYNC
@@ -276,6 +282,12 @@ export default function Workspace() {
     localStorage.setItem("itsmycut_company_name", companyName);
     localStorage.setItem("itsmycut_operator_name", operatorName);
   }, [jobName, customerName, companyName, operatorName, mounted]);
+
+  useEffect(() => {
+    if (!isDrawerOpen || !showDrawerSection) return;
+    if (drawerPage !== "developer" || !isDeveloperUser) return;
+    fetchUsersList();
+  }, [isDrawerOpen, showDrawerSection, drawerPage, isDeveloperUser]);
 
   // ----------------------------------------------------
   // 3. CORE CALCULATION ENGINE RUN
@@ -686,6 +698,7 @@ export default function Workspace() {
               email: currentUser.email,
               accessLevel: isAdmin ? "developer" : "free",
               role: isAdmin ? "admin" : "user",
+              deviceCount: 1,
               createdAt: new Date().toISOString(),
             };
             await setDoc(userRef, profile);
@@ -698,7 +711,7 @@ export default function Workspace() {
               isPro: true,
               licenseKey: "CLOUD-ACTIVATED",
               activationToken: "cloud",
-              deviceCount: 1,
+              deviceCount: data.deviceCount || 1,
             });
           } else {
             // Revert to localStorage check if not pro in cloud
@@ -833,6 +846,11 @@ export default function Workspace() {
       // Sort alphabetically by email
       items.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
       setUsersList(items);
+      const nextEdits: Record<string, string> = {};
+      items.forEach((u) => {
+        nextEdits[u.uid] = String(Math.max(1, Number(u.deviceCount) || 1));
+      });
+      setUserDeviceEdits(nextEdits);
     } catch (err) {
       console.error("Error fetching user list:", err);
     } finally {
@@ -850,6 +868,22 @@ export default function Workspace() {
     } catch (err) {
       console.error("Error updating user access:", err);
       alert("Failed to update user access level.");
+    }
+  };
+
+  const handleUpdateUserDeviceCount = async (targetUid: string, nextCount: number) => {
+    const safeCount = Math.max(1, Math.round(nextCount || 1));
+    try {
+      const userRef = doc(db, "users", targetUid);
+      await updateDoc(userRef, {
+        deviceCount: safeCount,
+      });
+      setUsersList((prev) => prev.map((u) => (u.uid === targetUid ? { ...u, deviceCount: safeCount } : u)));
+      setCloudSyncSuccess("Device limit updated.");
+      setTimeout(() => setCloudSyncSuccess(null), 2000);
+    } catch (err) {
+      console.error("Error updating user device count:", err);
+      alert("Failed to update device count.");
     }
   };
 
@@ -1147,6 +1181,7 @@ export default function Workspace() {
                   { id: "kerf", label: "Kerf", icon: Wrench },
                   { id: "account", label: "Account", icon: ShieldCheck },
                   { id: "data", label: "Data", icon: HardDriveUpload },
+                  ...(isDeveloperUser ? [{ id: "developer", label: "Developer", icon: Users }] : []),
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -1323,6 +1358,68 @@ export default function Workspace() {
                     </Link>
                     <button onClick={handleClearAll} className="w-full py-2 bg-rose-955/20 hover:bg-rose-955/40 border border-rose-900/30 text-rose-350 rounded-xl text-xs font-bold uppercase tracking-wider">Clear All Data</button>
                   </div>
+                </div>
+              )}
+
+              {showDrawerSection && drawerPage === "developer" && isDeveloperUser && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Developer Account Console</h4>
+                    <button
+                      onClick={fetchUsersList}
+                      disabled={loadingUsers}
+                      className="px-2.5 py-1.5 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-lg text-[10px] font-bold text-slate-200 uppercase"
+                    >
+                      {loadingUsers ? "Refreshing..." : "Refresh"}
+                    </button>
+                  </div>
+
+                  {loadingUsers ? (
+                    <p className="text-[11px] text-slate-500">Loading accounts...</p>
+                  ) : usersList.length === 0 ? (
+                    <p className="text-[11px] text-slate-500">No user accounts found.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+                      {usersList.map((u) => (
+                        <div key={u.uid} className="p-3 bg-slate-950 border border-slate-850 rounded-xl space-y-2">
+                          <p className="text-xs font-semibold text-slate-200 break-all">{u.email || u.uid}</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-mono">Status</p>
+                              <select
+                                value={u.accessLevel || "free"}
+                                onChange={(e) => handleUpdateUserAccess(u.uid, e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none"
+                              >
+                                <option value="free">Free</option>
+                                <option value="sync">Sync</option>
+                                <option value="pro">Pro</option>
+                                <option value="developer">Developer</option>
+                              </select>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-mono">Devices</p>
+                              <div className="flex gap-1.5">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={userDeviceEdits[u.uid] ?? String(Math.max(1, Number(u.deviceCount) || 1))}
+                                  onChange={(e) => setUserDeviceEdits((prev) => ({ ...prev, [u.uid]: e.target.value }))}
+                                  className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-200 font-mono focus:outline-none"
+                                />
+                                <button
+                                  onClick={() => handleUpdateUserDeviceCount(u.uid, parseInt(userDeviceEdits[u.uid] || "1", 10))}
+                                  className="px-2.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-[10px] font-bold uppercase"
+                                >
+                                  Save
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
