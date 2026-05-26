@@ -93,7 +93,7 @@ export function MaterialProfilePanel({ settings, setSettings }: MaterialProfileP
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
         {/* Stock Length */}
         <div className="space-y-1.5">
-          <label className="block text-sm font-semibold text-slate-400 uppercase tracking-wider">
+          <label className="block min-h-[40px] text-sm font-semibold text-slate-400 uppercase tracking-wider leading-tight">
             Stock Length ({settings.unit})
           </label>
           <div className="relative">
@@ -111,7 +111,7 @@ export function MaterialProfilePanel({ settings, setSettings }: MaterialProfileP
 
         {/* Blade Kerf */}
         <div className="space-y-1.5">
-          <label className="block text-sm font-semibold text-slate-400 uppercase tracking-wider">
+          <label className="block min-h-[40px] text-sm font-semibold text-slate-400 uppercase tracking-wider leading-tight">
             Blade Kerf ({settings.unit})
           </label>
           <input
@@ -128,7 +128,7 @@ export function MaterialProfilePanel({ settings, setSettings }: MaterialProfileP
 
         {/* Material Width */}
         <div className="space-y-1.5">
-          <label className="block text-sm font-semibold text-slate-400 uppercase tracking-wider">
+          <label className="block min-h-[40px] text-sm font-semibold text-slate-400 uppercase tracking-wider leading-tight">
             Material Width ({settings.unit}, optional)
           </label>
           <input
@@ -145,10 +145,8 @@ export function MaterialProfilePanel({ settings, setSettings }: MaterialProfileP
             }}
             className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl px-3.5 py-2.5 text-base text-white font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-700"
           />
-          <p className="text-[11px] text-slate-500 leading-tight">
-            {settings.stockWidth && settings.stockWidth > 0
-              ? "2D sheet mode is enabled."
-              : "Leave blank for linear cuts only. Enter a width to enable 2D sheet mode."}
+          <p className="text-[11px] text-slate-500 leading-tight min-h-[16px]">
+            {settings.stockWidth && settings.stockWidth > 0 ? "2D sheet mode enabled" : "Blank = linear cuts"}
           </p>
         </div>
       </div>
