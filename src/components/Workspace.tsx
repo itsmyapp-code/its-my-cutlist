@@ -40,7 +40,7 @@ import { VisualCanvas } from "./VisualCanvas";
 import { optimizeCutlist, Part, Scrap, StockSettings, LicenseState } from "@/utils/optimizer";
 import { auth, db } from "@/utils/firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
-import { doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateDoc } from "firebase/firestore";
+import { doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, onSnapshot } from "firebase/firestore";
 import AuthModal from "./AuthModal";
 import { SharedInventory } from "./SharedInventory";
 
@@ -300,6 +300,39 @@ export default function Workspace() {
     if (!isDrawerOpen || !showDrawerSection) return;
     if (drawerPage !== "developer" || !isDeveloperUser) return;
     fetchUsersList();
+  }, [isDrawerOpen, showDrawerSection, drawerPage, isDeveloperUser]);
+
+  useEffect(() => {
+    if (!isDrawerOpen || !showDrawerSection) return;
+    if (drawerPage !== "developer" || !isDeveloperUser) return;
+
+    setLoadingUsers(true);
+    setDeveloperError(null);
+
+    const unsub = onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        const items: any[] = [];
+        snapshot.forEach((userDoc: any) => {
+          items.push(userDoc.data());
+        });
+        items.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
+        setUsersList(items);
+        const nextEdits: Record<string, string> = {};
+        items.forEach((u) => {
+          nextEdits[u.uid] = String(Math.max(1, Number(u.deviceCount) || 1));
+        });
+        setUserDeviceEdits(nextEdits);
+        setLoadingUsers(false);
+      },
+      (err) => {
+        console.error("Live users subscription failed:", err);
+        setDeveloperError("Live account data is unavailable. Check sign-in/permissions and retry.");
+        setLoadingUsers(false);
+      }
+    );
+
+    return () => unsub();
   }, [isDrawerOpen, showDrawerSection, drawerPage, isDeveloperUser]);
 
   // ----------------------------------------------------
@@ -858,23 +891,9 @@ export default function Workspace() {
       ]) as any;
 
       const items: any[] = [];
-      querySnapshot.forEach((doc) => {
-        items.push(doc.data());
+      querySnapshot.forEach((userDoc: any) => {
+        items.push(userDoc.data());
       });
-
-      if (items.length === 0 && user) {
-        const ownSnap = await getDoc(doc(db, "users", user.uid));
-        if (ownSnap.exists()) {
-          items.push(ownSnap.data());
-        } else {
-          items.push({
-            uid: user.uid,
-            email: user.email,
-            accessLevel: "developer",
-            deviceCount: 1,
-          });
-        }
-      }
 
       // Sort alphabetically by email
       items.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
@@ -886,23 +905,7 @@ export default function Workspace() {
       setUserDeviceEdits(nextEdits);
     } catch (err: any) {
       console.error("Error fetching user list:", err);
-      if (user) {
-        try {
-          const ownSnap = await getDoc(doc(db, "users", user.uid));
-          if (ownSnap.exists()) {
-            const own = ownSnap.data();
-            setUsersList([own]);
-            setUserDeviceEdits({ [own.uid]: String(Math.max(1, Number(own.deviceCount) || 1)) });
-            setDeveloperError("Could not load all accounts. Showing your account only.");
-          } else {
-            setDeveloperError("Could not load accounts right now.");
-          }
-        } catch {
-          setDeveloperError("Could not load accounts right now.");
-        }
-      } else {
-        setDeveloperError("Please sign in to load developer accounts.");
-      }
+      setDeveloperError("Could not load live accounts. Please check sign-in/permissions.");
     } finally {
       setLoadingUsers(false);
     }
@@ -1456,7 +1459,7 @@ export default function Workspace() {
                               </select>
                             </div>
                             <div className="space-y-1">
-                              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-mono">Devices</p>
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-mono">Device Limit (Allowed)</p>
                               <div className="flex gap-1.5">
                                 <input
                                   type="number"
