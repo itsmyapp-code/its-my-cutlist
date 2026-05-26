@@ -19,6 +19,8 @@ export interface StockSettings {
   stockWidth?: number; // Optional: if present and > 0, triggers 2D optimization
   bladeKerf: number;
   unit: "mm" | "cm" | "in";
+  thickness?: string;  // e.g., "18mm"
+  materialType?: string; // e.g., "MDF"
 }
 
 export interface LicenseState {

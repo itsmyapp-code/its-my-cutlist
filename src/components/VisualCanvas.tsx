@@ -11,15 +11,19 @@ import {
   CheckCircle2,
   RefreshCw,
   HelpCircle,
-  AlertCircle
+  AlertCircle,
+  Plus,
+  Scissors
 } from "lucide-react";
-import { BoardLayout, OptimizationResult, CutItem } from "@/utils/optimizer";
+import { BoardLayout, OptimizationResult, CutItem, StockSettings } from "@/utils/optimizer";
 
 interface VisualCanvasProps {
   result: OptimizationResult;
   unit: string;
   partsList: { id: string; label?: string }[];
   bladeKerf: number;
+  settings: StockSettings;
+  onAddScraps: (newScraps: { length: number; width?: number; label?: string }[]) => void;
 }
 
 // Generate consistent background color based on Part ID
@@ -56,7 +60,7 @@ function getLabelSizes(length: number, width?: number) {
   return { dim: "text-[10px] font-bold", label: "text-[8px] opacity-75" };
 }
 
-export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanvasProps) {
+export function VisualCanvas({ result, unit, partsList, bladeKerf, settings, onAddScraps }: VisualCanvasProps) {
   // Map partId to color index
   const partColorMap = useMemo(() => {
     const map: Record<string, string> = {};

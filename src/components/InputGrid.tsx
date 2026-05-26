@@ -156,6 +156,39 @@ export function MaterialProfilePanel({ settings, setSettings }: MaterialProfileP
           />
         </div>
       </div>
+
+      {/* Material Type & Thickness */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-900/60">
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+            Material Type (Optional)
+          </label>
+          <input
+            type="text"
+            placeholder="e.g. MDF, Oak Plywood, Pine"
+            value={settings.materialType || ""}
+            onChange={(e) =>
+              setSettings({ ...settings, materialType: e.target.value })
+            }
+            className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-700"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+            Thickness (Optional)
+          </label>
+          <input
+            type="text"
+            placeholder="e.g. 18mm, 3/4 inch"
+            value={settings.thickness || ""}
+            onChange={(e) =>
+              setSettings({ ...settings, thickness: e.target.value })
+            }
+            className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-700"
+          />
+        </div>
+      </div>
     </div>
   );
 }
