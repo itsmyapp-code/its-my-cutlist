@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { 
   Settings, 
   Terminal, 
@@ -18,7 +19,9 @@ import {
   CheckCircle,
   X,
   CreditCard,
-  HelpCircle
+  HelpCircle,
+  Menu,
+  Copy
 } from "lucide-react";
 import { BentoGrid, BentoBox } from "./BentoGrid";
 import { MaterialProfilePanel, QuickPasteCLI, PartMatrix, ScrapPile } from "./InputGrid";
@@ -50,6 +53,11 @@ export default function Workspace() {
   // UI state
   const [licenseKeyInput, setLicenseKeyInput] = useState("");
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [copiedBackup, setCopiedBackup] = useState(false);
+  const [importJsonText, setImportJsonText] = useState("");
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
   const [activationLoading, setActivationLoading] = useState(false);
   const [activationSuccess, setActivationSuccess] = useState<string | null>(null);
   const [activationError, setActivationError] = useState<string | null>(null);
@@ -243,6 +251,83 @@ export default function Workspace() {
     }
   };
 
+  const handleLoadPreset = (preset: {
+    name: string;
+    length: number;
+    width: number;
+    type: string;
+    thick: string;
+    unit: string;
+  }) => {
+    setSettings((prev) => ({
+      ...prev,
+      stockLength: preset.length,
+      stockWidth: preset.width > 0 ? preset.width : undefined,
+      materialType: preset.type,
+      thickness: preset.thick,
+      unit: preset.unit as "mm" | "cm" | "in",
+    }));
+    setIsDrawerOpen(false);
+  };
+
+  const handleUpdateKerf = (val: number) => {
+    setSettings((prev) => ({
+      ...prev,
+      bladeKerf: val,
+    }));
+  };
+
+  const handleExportWorkspace = () => {
+    const backupData = {
+      settings,
+      parts,
+      scraps,
+    };
+    navigator.clipboard.writeText(JSON.stringify(backupData, null, 2));
+    setCopiedBackup(true);
+    setTimeout(() => setCopiedBackup(false), 2000);
+  };
+
+  const handleImportWorkspace = () => {
+    setImportError(null);
+    setImportSuccess(null);
+    try {
+      const parsed = JSON.parse(importJsonText.trim());
+      if (parsed.settings) {
+        setSettings(parsed.settings);
+      }
+      if (parsed.parts) {
+        setParts(parsed.parts);
+      }
+      if (parsed.scraps) {
+        setScraps(parsed.scraps);
+      }
+      setImportSuccess("Job loaded successfully!");
+      setImportJsonText("");
+      setTimeout(() => {
+        setIsDrawerOpen(false);
+        setImportSuccess(null);
+      }, 1500);
+    } catch (e) {
+      setImportError("Invalid JSON format. Check your pasted string.");
+    }
+  };
+
+  const handleClearAll = () => {
+    if (confirm("Are you sure you want to delete all parts, scraps, and reset settings? This cannot be undone.")) {
+      setParts([]);
+      setScraps([]);
+      setSettings({
+        stockLength: 2400,
+        bladeKerf: 3,
+        unit: "mm",
+        thickness: "",
+        materialType: "",
+      });
+      setIsDrawerOpen(false);
+    }
+  };
+
   const is2DMode = !!(settings.stockWidth && settings.stockWidth > 0);
 
   if (!mounted) {
@@ -257,66 +342,317 @@ export default function Workspace() {
   }
 
   return (
-    <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8">
+    <div className="flex-1 flex flex-col w-full">
       {/* ---------------------------------------------------- */}
-      {/* ON-SCREEN INTERACTIVE UI                             */}
+      {/* GLOBAL HEADER                                        */}
       {/* ---------------------------------------------------- */}
-      <div className="print:hidden">
-        {/* WORKSHOP HEADER SECTION */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white uppercase">
+      <header className="border-b border-slate-900 bg-slate-955/80 backdrop-blur sticky top-0 z-30 px-4 sm:px-6 py-4 print:hidden">
+        <div className="max-w-7xl mx-auto flex items-center justify-between w-full">
+          <div className="flex items-center gap-3">
+            <Image
+              src="/cutlist-logo.png"
+              alt="Its My Cutlist Logo"
+              width={36}
+              height={36}
+              className="rounded-lg object-contain border border-slate-800 shadow-lg"
+              priority
+            />
+            <div>
+              <span className="text-lg font-extrabold tracking-tight text-white uppercase block sm:inline-block leading-none">
                 ITS MY <span className="text-emerald-400">CUTLIST</span>
-              </h1>
-              <span className={`text-[10px] font-bold tracking-widest font-mono uppercase px-2 py-0.5 rounded-full ${
-                license.isPro 
-                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25" 
-                  : "bg-amber-500/10 text-amber-400 border border-amber-500/25"
-              }`}>
-                {license.isPro ? "PRO LICENSE ACTIVE" : "FREE TIER"}
               </span>
+              <span className="text-[10px] text-slate-500 font-mono block sm:hidden">Workshop Dashboard</span>
             </div>
-            <p className="text-xs text-slate-500 font-medium mt-1">
-              Browser-based 1D bin-packing optimization. Zero tracking, zero storage.
-            </p>
+            <span className={`hidden sm:inline-block text-[9px] font-bold tracking-widest font-mono uppercase px-2.5 py-0.5 rounded-md ${
+              license.isPro 
+                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 animate-pulse" 
+                : "bg-amber-500/10 text-amber-400 border border-amber-500/25"
+            }`}>
+              {license.isPro ? "Pro Active" : "Free Tier"}
+            </span>
           </div>
 
-          {/* License Action / Summary */}
-          <div className="flex items-center gap-3">
-            <Link
-              href="/help"
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 focus:outline-none"
-            >
-              <HelpCircle size={14} className="text-emerald-450" />
-              <span>Help Guide</span>
-            </Link>
+          <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
+            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-850">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+              100% Offline Engine
+            </span>
+            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-850">
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-400"></span>
+              Private by Design
+            </span>
 
-            {license.isPro ? (
-              <div className="flex items-center gap-3 bg-slate-900/60 border border-slate-800 rounded-xl px-3.5 py-2">
-                <ShieldCheck size={16} className="text-emerald-400" />
-                <div className="text-left font-mono">
-                  <span className="text-[10px] text-slate-500 block uppercase tracking-wider">Licensed Key</span>
-                  <span className="text-xs text-white font-bold">{license.licenseKey?.slice(0, 10)}...</span>
-                </div>
-                <button
-                  onClick={handleDeactivateLicense}
-                  className="text-[10px] font-bold text-rose-400 hover:text-rose-300 uppercase tracking-wider pl-2 border-l border-slate-800 focus:outline-none"
-                >
-                  Deactivate
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setIsUpgradeModalOpen(true)}
-                className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/25 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-1.5 focus:outline-none"
-              >
-                <Sparkles size={14} />
-                Unlock Pro License
-              </button>
-            )}
+            {/* Hamburger Options Trigger */}
+            <button
+              onClick={() => setIsDrawerOpen(true)}
+              className="flex items-center gap-2 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-emerald-500/30 text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all focus:outline-none focus:ring-1 focus:ring-emerald-500/20"
+            >
+              <Menu size={16} className="text-emerald-400" />
+              <span>Options &amp; Presets</span>
+            </button>
           </div>
         </div>
+      </header>
+
+      {/* ---------------------------------------------------- */}
+      {/* SLIDEOUT OPTIONS & IMPORT DRAWER                    */}
+      {/* ---------------------------------------------------- */}
+      {isDrawerOpen && (
+        <>
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-[99] transition-opacity duration-200"
+            onClick={() => setIsDrawerOpen(false)}
+          />
+
+          {/* Drawer Panel */}
+          <div className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-slate-900 border-l border-slate-850 shadow-2xl z-[100] flex flex-col transform transition-transform duration-300 ease-out">
+            {/* Drawer Header */}
+            <div className="p-6 border-b border-slate-850 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Menu className="text-emerald-400" size={18} />
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">Presets &amp; Settings</h3>
+              </div>
+              <button
+                onClick={() => setIsDrawerOpen(false)}
+                className="text-slate-400 hover:text-white transition-colors p-1 bg-slate-950 border border-slate-850 hover:border-slate-700 rounded-lg focus:outline-none"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Drawer Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              
+              {/* Section 1: Presets */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">1. Material Presets</h4>
+                  <span className="text-[9px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full font-mono font-bold">1-Click Load</span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Instantly configure board sizes, thicknesses, and material profiles.
+                </p>
+
+                {/* Sub-section: 2D Sheet Presets */}
+                <div className="space-y-2">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Sheet Materials (2D Planar)</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { name: "MDF 18mm", length: 2440, width: 1220, type: "MDF", thick: "18mm", unit: "mm" },
+                      { name: "MDF 12mm", length: 2440, width: 1220, type: "MDF", thick: "12mm", unit: "mm" },
+                      { name: "Plywood 18mm", length: 2440, width: 1220, type: "Plywood", thick: "18mm", unit: "mm" },
+                      { name: "Plywood 12mm", length: 2440, width: 1220, type: "Plywood", thick: "12mm", unit: "mm" },
+                      { name: "Euro Ply 18mm", length: 2500, width: 1250, type: "Euro Plywood", thick: "18mm", unit: "mm" },
+                      { name: "US 4x8 ft (3/4\")", length: 96, width: 48, type: "Plywood", thick: "3/4\"", unit: "in" },
+                      { name: "US 4x8 ft (1/2\")", length: 96, width: 48, type: "Plywood", thick: "1/2\"", unit: "in" },
+                    ].map((preset, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleLoadPreset(preset)}
+                        className="p-2.5 bg-slate-950 hover:bg-slate-850 hover:border-emerald-500/40 border border-slate-850 text-left rounded-xl transition-all group focus:outline-none"
+                      >
+                        <span className="block text-xs font-bold text-slate-200 group-hover:text-emerald-400 transition-colors">{preset.name}</span>
+                        <span className="block text-[9px] text-slate-500 font-mono mt-0.5">
+                          {preset.length} × {preset.width} {preset.unit}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sub-section: 1D Length Presets */}
+                <div className="space-y-2 pt-2">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Timber &amp; Planks (1D Linear)</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { name: "CLS Timber 2.4m", length: 2400, width: 0, type: "CLS Timber", thick: "38x89mm", unit: "mm" },
+                      { name: "CLS Timber 3.0m", length: 3000, width: 0, type: "CLS Timber", thick: "38x89mm", unit: "mm" },
+                      { name: "CLS Timber 4.8m", length: 4800, width: 0, type: "CLS Timber", thick: "38x89mm", unit: "mm" },
+                      { name: "US 2x4 Stud 8ft", length: 96, width: 0, type: "Lumber", thick: "2x4", unit: "in" },
+                      { name: "US 2x4 Stud 10ft", length: 120, width: 0, type: "Lumber", thick: "2x4", unit: "in" },
+                      { name: "Metal Section 6m", length: 6000, width: 0, type: "Steel Profile", thick: "3mm Wall", unit: "mm" },
+                    ].map((preset, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => handleLoadPreset(preset)}
+                        className="p-2.5 bg-slate-955 hover:bg-slate-850 hover:border-indigo-500/40 border border-slate-850 text-left rounded-xl transition-all group focus:outline-none"
+                      >
+                        <span className="block text-xs font-bold text-slate-200 group-hover:text-indigo-400 transition-colors">{preset.name}</span>
+                        <span className="block text-[9px] text-slate-500 font-mono mt-0.5">
+                          {preset.length} {preset.unit} length
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Blade Kerf Presets */}
+              <div className="space-y-3 pt-2 border-t border-slate-850">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">2. Blade Kerf Presets</h4>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: "Table Saw", value: 3.2 },
+                    { label: "Thin Kerf", value: 2.4 },
+                    { label: "Bandsaw", value: 1.5 },
+                  ].map((preset, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleUpdateKerf(preset.value)}
+                      className={`p-2 bg-slate-950 hover:bg-slate-850 border rounded-lg text-center transition-all focus:outline-none ${
+                        settings.bladeKerf === preset.value ? "border-emerald-500 text-white" : "border-slate-850 text-slate-400"
+                      }`}
+                    >
+                      <span className="block text-[9px] font-bold truncate">{preset.label}</span>
+                      <span className="block text-xs font-mono font-bold text-emerald-450 mt-0.5">{preset.value}mm</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Section 3: Pro License Center */}
+              <div className="space-y-3 pt-2 border-t border-slate-850">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">3. Pro License Status</h4>
+                {license.isPro ? (
+                  <div className="p-4 bg-slate-955/60 border border-slate-850 rounded-xl space-y-3">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck size={18} className="text-emerald-400" />
+                      <span className="text-xs font-bold text-white uppercase tracking-wider">Pro License Active</span>
+                    </div>
+                    <div className="font-mono text-[10px] space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Key:</span>
+                        <span className="text-slate-300">{license.licenseKey?.slice(0, 12)}...</span>
+                      </div>
+                      {license.deviceCount !== undefined && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Devices:</span>
+                          <span className="text-slate-300">{license.deviceCount} / 3</span>
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleDeactivateLicense}
+                      className="w-full py-1.5 bg-rose-955/20 hover:bg-rose-955/40 border border-rose-900/30 text-rose-400 hover:text-rose-350 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all focus:outline-none"
+                    >
+                      Deactivate License
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-[11px] text-slate-500">
+                      Unlock unlimited parts lists and custom blade/board settings presets.
+                    </p>
+                    <form onSubmit={handleActivateLicense} className="space-y-2">
+                      <input
+                        type="text"
+                        placeholder="ENTER LICENSE KEY"
+                        value={licenseKeyInput}
+                        onChange={(e) => setLicenseKeyInput(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-850 focus:border-emerald-500/40 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono text-center placeholder:text-slate-650 uppercase tracking-widest focus:outline-none"
+                      />
+                      {activationError && <p className="text-[10px] text-rose-450 font-mono">{activationError}</p>}
+                      {activationSuccess && <p className="text-[10px] text-emerald-400 font-mono">{activationSuccess}</p>}
+                      <button
+                        type="submit"
+                        disabled={activationLoading}
+                        className="w-full py-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 rounded-xl text-xs font-bold uppercase tracking-wider shadow-lg shadow-emerald-500/15 hover:shadow-emerald-500/25 transition-all flex items-center justify-center gap-1.5 focus:outline-none disabled:opacity-50"
+                      >
+                        <Sparkles size={14} />
+                        {activationLoading ? "Validating..." : "Activate Pro Key"}
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 4: Import/Export Backup */}
+              <div className="space-y-3 pt-2 border-t border-slate-850">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">4. Import &amp; Export Job</h4>
+                  <span className="text-[9px] text-slate-500 font-mono">Local JSON</span>
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Backup current configuration or copy parts lists and scraps between devices.
+                </p>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleExportWorkspace}
+                    className="flex-1 py-2 px-3 bg-slate-950 hover:bg-slate-855 border border-slate-850 hover:border-emerald-500/20 text-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none"
+                  >
+                    {copiedBackup ? <CheckCircle size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                    {copiedBackup ? "Copied!" : "Export Job JSON"}
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 pt-2">
+                  <textarea
+                    placeholder="Paste job JSON here to import..."
+                    value={importJsonText}
+                    onChange={(e) => setImportJsonText(e.target.value)}
+                    className="w-full h-20 bg-slate-950 border border-slate-850 focus:border-emerald-500/40 rounded-xl p-2.5 text-[10px] text-slate-300 font-mono focus:outline-none resize-none"
+                  />
+                  {importError && <p className="text-[10px] text-rose-455">{importError}</p>}
+                  {importSuccess && <p className="text-[10px] text-emerald-400">{importSuccess}</p>}
+                  
+                  <button
+                    onClick={handleImportWorkspace}
+                    className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-955 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none"
+                  >
+                    Load JSON Job
+                  </button>
+                </div>
+              </div>
+
+              {/* Section 5: Help Guide */}
+              <div className="space-y-2 pt-2 border-t border-slate-850">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">5. Documentation</h4>
+                <Link
+                  href="/help"
+                  onClick={() => setIsDrawerOpen(false)}
+                  className="w-full py-2.5 bg-slate-950 hover:bg-slate-850 border border-slate-850 hover:border-emerald-500/20 text-slate-200 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none"
+                >
+                  <HelpCircle size={14} className="text-emerald-400" />
+                  View Help &amp; User Guide
+                </Link>
+              </div>
+
+              {/* Section 6: Clear Workspace */}
+              <div className="pt-2 border-t border-slate-850">
+                <button
+                  onClick={handleClearAll}
+                  className="w-full py-2 bg-rose-955/20 hover:bg-rose-955/40 border border-rose-900/30 text-rose-350 hover:text-rose-300 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none"
+                >
+                  Clear All Data
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Main Workspace Body */}
+      <div className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8">
+        {/* ---------------------------------------------------- */}
+        {/* ON-SCREEN INTERACTIVE UI                             */}
+        {/* ---------------------------------------------------- */}
+        <div className="print:hidden">
+          {/* WORKSHOP HEADER SECTION */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+            <div>
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white uppercase">
+                  Workshop <span className="text-emerald-400">Cockpit</span>
+                </h1>
+              </div>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                Configure material profiles and optimize cutting layouts with live waste feedback.
+              </p>
+            </div>
+          </div>
 
         {/* ASYMMETRICAL BENTO GRID WORKSPACE */}
         <BentoGrid>
@@ -728,5 +1064,6 @@ export default function Workspace() {
         </div>
       </div>
     </div>
+  </div>
   );
 }
