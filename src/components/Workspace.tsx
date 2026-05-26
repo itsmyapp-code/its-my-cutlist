@@ -80,14 +80,7 @@ const LEGACY_BUILTIN_PRESET_NAMES = new Set([
   "CLS Timber",
 ]);
 
-const MACHINE_KERF_PRESETS = [
-  { label: "Dewalt DWE7485", value: 2.2 },
-  { label: "Makita MLT100", value: 3.0 },
-  { label: "Festool TS 55", value: 2.2 },
-  { label: "Bosch GTS 10", value: 3.2 },
-  { label: "Evolution R255", value: 2.4 },
-  { label: "Bandsaw Generic", value: 1.5 },
-];
+const MACHINE_KERF_PRESETS: Array<{ label: string; value: number }> = [];
 
 const MATERIAL_PRESET_CSV_TEMPLATE = [
   "name,type,thickness,length,width,unit",
@@ -155,6 +148,7 @@ export default function Workspace() {
   const [activationError, setActivationError] = useState<string | null>(null);
   const [usersList, setUsersList] = useState<any[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [developerError, setDeveloperError] = useState<string | null>(null);
   const [drawerPage, setDrawerPage] = useState<DrawerPage>("materials");
   const [showDrawerSection, setShowDrawerSection] = useState(false);
   const [userDeviceEdits, setUserDeviceEdits] = useState<Record<string, string>>({});
@@ -856,12 +850,32 @@ export default function Workspace() {
 
   const fetchUsersList = async () => {
     setLoadingUsers(true);
+    setDeveloperError(null);
     try {
-      const querySnapshot = await getDocs(collection(db, "users"));
+      const querySnapshot = await Promise.race([
+        getDocs(collection(db, "users")),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out loading users list.")), 10000)),
+      ]) as any;
+
       const items: any[] = [];
       querySnapshot.forEach((doc) => {
         items.push(doc.data());
       });
+
+      if (items.length === 0 && user) {
+        const ownSnap = await getDoc(doc(db, "users", user.uid));
+        if (ownSnap.exists()) {
+          items.push(ownSnap.data());
+        } else {
+          items.push({
+            uid: user.uid,
+            email: user.email,
+            accessLevel: "developer",
+            deviceCount: 1,
+          });
+        }
+      }
+
       // Sort alphabetically by email
       items.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
       setUsersList(items);
@@ -870,8 +884,25 @@ export default function Workspace() {
         nextEdits[u.uid] = String(Math.max(1, Number(u.deviceCount) || 1));
       });
       setUserDeviceEdits(nextEdits);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error fetching user list:", err);
+      if (user) {
+        try {
+          const ownSnap = await getDoc(doc(db, "users", user.uid));
+          if (ownSnap.exists()) {
+            const own = ownSnap.data();
+            setUsersList([own]);
+            setUserDeviceEdits({ [own.uid]: String(Math.max(1, Number(own.deviceCount) || 1)) });
+            setDeveloperError("Could not load all accounts. Showing your account only.");
+          } else {
+            setDeveloperError("Could not load accounts right now.");
+          }
+        } catch {
+          setDeveloperError("Could not load accounts right now.");
+        }
+      } else {
+        setDeveloperError("Please sign in to load developer accounts.");
+      }
     } finally {
       setLoadingUsers(false);
     }
@@ -1305,18 +1336,24 @@ export default function Workspace() {
               {showDrawerSection && drawerPage === "kerf" && (
                 <div className="space-y-3">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Blade Kerf by Machine</h4>
-                  <div className="grid grid-cols-2 gap-2">
-                    {MACHINE_KERF_PRESETS.map((preset) => (
-                      <button
-                        key={preset.label}
-                        onClick={() => handleUpdateKerf(preset.value)}
-                        className={`p-2.5 border rounded-lg text-left transition-all ${settings.bladeKerf === preset.value ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300" : "bg-slate-950 border-slate-850 text-slate-300 hover:border-slate-700"}`}
-                      >
-                        <span className="block text-[11px] font-bold">{preset.label}</span>
-                        <span className="block text-[10px] font-mono mt-0.5">{preset.value} {settings.unit}</span>
-                      </button>
-                    ))}
-                  </div>
+                  {MACHINE_KERF_PRESETS.length === 0 ? (
+                    <p className="text-[11px] text-slate-500">
+                      No default kerf presets. Set blade kerf directly in Material &amp; Cut Profile.
+                    </p>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {MACHINE_KERF_PRESETS.map((preset) => (
+                        <button
+                          key={preset.label}
+                          onClick={() => handleUpdateKerf(preset.value)}
+                          className={`p-2.5 border rounded-lg text-left transition-all ${settings.bladeKerf === preset.value ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-300" : "bg-slate-950 border-slate-850 text-slate-300 hover:border-slate-700"}`}
+                        >
+                          <span className="block text-[11px] font-bold">{preset.label}</span>
+                          <span className="block text-[10px] font-mono mt-0.5">{preset.value} {settings.unit}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1395,6 +1432,8 @@ export default function Workspace() {
 
                   {loadingUsers ? (
                     <p className="text-[11px] text-slate-500">Loading accounts...</p>
+                  ) : developerError ? (
+                    <p className="text-[11px] text-rose-400">{developerError}</p>
                   ) : usersList.length === 0 ? (
                     <p className="text-[11px] text-slate-500">No user accounts found.</p>
                   ) : (
