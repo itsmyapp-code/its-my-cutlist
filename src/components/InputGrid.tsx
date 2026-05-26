@@ -90,7 +90,7 @@ export function MaterialProfilePanel({ settings, setSettings }: MaterialProfileP
       </div>
 
       {/* Numerical Configs */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
         {/* Stock Length */}
         <div className="space-y-1.5">
           <label className="block text-sm font-semibold text-slate-400 uppercase tracking-wider">
@@ -128,22 +128,13 @@ export function MaterialProfilePanel({ settings, setSettings }: MaterialProfileP
 
         {/* Material Width */}
         <div className="space-y-1.5">
-          <label className="block text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-            Material Width ({settings.unit})
-            {settings.stockWidth && settings.stockWidth > 0 ? (
-              <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-bold normal-case">
-                2D Active
-              </span>
-            ) : (
-              <span className="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-500 border border-slate-700/50 font-normal normal-case">
-                1D Only
-              </span>
-            )}
+          <label className="block text-sm font-semibold text-slate-400 uppercase tracking-wider">
+            Material Width ({settings.unit}, optional)
           </label>
           <input
             type="number"
             min="0"
-            placeholder="Leave empty for 1D"
+            placeholder="Leave empty for linear cuts"
             value={settings.stockWidth || ""}
             onChange={(e) => {
               const val = parseFloat(e.target.value);
@@ -154,6 +145,11 @@ export function MaterialProfilePanel({ settings, setSettings }: MaterialProfileP
             }}
             className="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl px-3.5 py-2.5 text-base text-white font-mono focus:outline-none focus:ring-1 focus:ring-emerald-500/30 placeholder:text-slate-700"
           />
+          <p className="text-[11px] text-slate-500 leading-tight">
+            {settings.stockWidth && settings.stockWidth > 0
+              ? "2D sheet mode is enabled."
+              : "Leave blank for linear cuts only. Enter a width to enable 2D sheet mode."}
+          </p>
         </div>
       </div>
 

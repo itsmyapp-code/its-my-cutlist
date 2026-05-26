@@ -526,6 +526,15 @@ export default function Workspace() {
     }).format(new Date(iso));
   };
 
+  const getFriendlyCloudError = (err: any, fallback: string) => {
+    const code = String(err?.code || "").toLowerCase();
+    const msg = String(err?.message || "").toLowerCase();
+    if (code.includes("unavailable") || code.includes("failed-precondition") || msg.includes("offline")) {
+      return "Cloud sync is temporarily unavailable. Your internet is fine and local mode is still working.";
+    }
+    return err?.message || fallback;
+  };
+
   const handleExportWorkspace = () => {
     const rows: string[] = ["recordType,id,label,length,width,quantity,key,value"];
 
@@ -706,8 +715,10 @@ export default function Workspace() {
             }
             setLicense({ isPro: false });
           }
-        } catch (err) {
-          console.error("Error syncing user profile:", err);
+        } catch (err: any) {
+          console.warn("Cloud profile check unavailable; continuing in local mode:", err);
+          setCloudSyncError(getFriendlyCloudError(err, "Cloud profile sync unavailable right now."));
+          setTimeout(() => setCloudSyncError(null), 4500);
         }
       } else {
         setCentralInventory([]);
@@ -746,8 +757,10 @@ export default function Workspace() {
         items.push({ id: doc.id, ...doc.data() });
       });
       setCentralInventory(items);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error fetching central inventory:", err);
+      setCloudSyncError(getFriendlyCloudError(err, "Failed to load shared inventory."));
+      setTimeout(() => setCloudSyncError(null), 4500);
     } finally {
       setLoadingCentralInventory(false);
     }
@@ -770,7 +783,7 @@ export default function Workspace() {
       setTimeout(() => setCloudSyncSuccess(null), 3000);
     } catch (err: any) {
       console.error("Cloud sync error:", err);
-      setCloudSyncError(err.message || "Failed to sync to cloud.");
+      setCloudSyncError(getFriendlyCloudError(err, "Failed to sync to cloud."));
       setTimeout(() => setCloudSyncError(null), 4000);
     } finally {
       setCloudSyncing(false);
@@ -797,7 +810,7 @@ export default function Workspace() {
       }
     } catch (err: any) {
       console.error("Load cloud job error:", err);
-      setCloudSyncError(err.message || "Failed to load cloud job.");
+      setCloudSyncError(getFriendlyCloudError(err, "Failed to load cloud job."));
       setTimeout(() => setCloudSyncError(null), 4000);
     } finally {
       setCloudSyncing(false);
@@ -1283,14 +1296,6 @@ export default function Workspace() {
 
               {drawerPage === "data" && (
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">PDF Report Details</h4>
-                    <input value={jobName} onChange={(e) => setJobName(e.target.value)} placeholder="Job name" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
-                    <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
-                    <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Company doing the cutting" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
-                    <input value={operatorName} onChange={(e) => setOperatorName(e.target.value)} placeholder="Operator" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
-                  </div>
-
                   <div className="space-y-2 pt-2 border-t border-slate-850">
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Import &amp; Export CSV</h4>
                     <button onClick={handleExportWorkspace} className="w-full py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-lg text-xs font-bold text-slate-200 uppercase">{copiedBackup ? "Copied" : "Export Job CSV"}</button>
@@ -1333,6 +1338,23 @@ export default function Workspace() {
                 Configure material profiles and optimize cutting layouts with live waste feedback.
               </p>
             </div>
+          </div>
+
+          <div className="mb-5">
+            <BentoBox
+              title="Report &amp; Job Details"
+              subtitle="Shown on print/PDF cut lists"
+              icon={<FileText size={16} />}
+              badge="Visible"
+              badgeType="success"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input value={jobName} onChange={(e) => setJobName(e.target.value)} placeholder="Job name" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
+                <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
+                <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Company doing the cutting" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
+                <input value={operatorName} onChange={(e) => setOperatorName(e.target.value)} placeholder="Operator" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
+              </div>
+            </BentoBox>
           </div>
 
         {/* ASYMMETRICAL BENTO GRID WORKSPACE */}
