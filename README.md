@@ -39,10 +39,18 @@ A premium, privacy-first, zero-server 1D material bin-packing optimizer built en
    npm install
    ```
 
-3. Set up environment variables (optional for local development, fallback values are active):
+3. Set up environment variables (required):
    ```env
+   NEXT_PUBLIC_FIREBASE_PROJECT_ID="your-firebase-project-id"
+   NEXT_PUBLIC_FIREBASE_APP_ID="your-firebase-app-id"
+   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="your-firebase-storage-bucket"
+   NEXT_PUBLIC_FIREBASE_API_KEY="your-firebase-web-api-key"
+   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="your-firebase-auth-domain"
+   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="your-firebase-messaging-sender-id"
    ACTIVATION_SECRET="your-jwt-hmac-secret-key"
    ```
+
+   You can copy `.env.example` to `.env.local` for local development.
 
 4. Run the development server:
    ```bash
