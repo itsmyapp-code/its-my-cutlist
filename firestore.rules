@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can read/write their own profiles
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Shared workshop inventory (offcuts)
+    match /offcuts_inventory/{offcutId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // Deployed jobs / cutlists
+    match /jobs/{jobId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
