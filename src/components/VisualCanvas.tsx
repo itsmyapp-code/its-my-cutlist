@@ -34,6 +34,28 @@ const PART_COLORS = [
   "bg-orange-600/80 hover:bg-orange-600/90 text-orange-100 border-orange-500/30",
 ];
 
+function getLabelSizes(length: number, width?: number) {
+  const w = width || 0;
+  if (w === 0) {
+    if (length > 250) {
+      return { dim: "text-sm font-extrabold", label: "text-xs font-mono" };
+    }
+    return { dim: "text-xs font-bold", label: "text-[10px] font-mono" };
+  }
+
+  // 2D Mode sizes
+  if (length > 600 && w > 400) {
+    return { dim: "text-base sm:text-lg md:text-xl font-black", label: "text-xs sm:text-sm md:text-base font-bold opacity-90 mt-1" };
+  }
+  if (length > 300 && w > 200) {
+    return { dim: "text-sm sm:text-base font-extrabold", label: "text-xs font-semibold opacity-90 mt-0.5" };
+  }
+  if (length > 150 && w > 100) {
+    return { dim: "text-xs sm:text-sm font-bold", label: "text-[10px] font-medium opacity-85" };
+  }
+  return { dim: "text-[10px] font-bold", label: "text-[8px] opacity-75" };
+}
+
 export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanvasProps) {
   // Map partId to color index
   const partColorMap = useMemo(() => {
@@ -237,6 +259,9 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
                     {board.cuts.map((cut, cutIdx) => {
                       const isChecked = checkedCuts[`${board.id}_${cutIdx}`];
                       const isActive = nextCutToExecute && nextCutToExecute.boardId === board.id && nextCutToExecute.cutIdx === cutIdx;
+                      const cutW = cut.w || cut.length;
+                      const cutH = cut.h || cut.width || 1;
+                      const sizes = getLabelSizes(cutW, cutH);
                       
                       let bgStyle = isChecked 
                         ? "bg-emerald-500 text-emerald-950 border-emerald-400" 
@@ -248,8 +273,8 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
                           style={{
                             left: `${((cut.x || 0) / board.originalLength) * 100}%`,
                             top: `${((cut.y || 0) / board.originalWidth) * 100}%`,
-                            width: `${((cut.w || cut.length) / board.originalLength) * 100}%`,
-                            height: `${((cut.h || cut.width || 1) / board.originalWidth) * 100}%`,
+                            width: `${(cutW / board.originalLength) * 100}%`,
+                            height: `${(cutH / board.originalWidth) * 100}%`,
                           }}
                           onClick={() => isSwipeMode && handleToggleCut(board.id, cutIdx)}
                           className={`absolute border border-slate-950/40 flex flex-col justify-center items-center p-1 select-none transition-all duration-300 group ${bgStyle} ${
@@ -258,11 +283,11 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
                             isActive && isSwipeMode ? "ring-2 ring-amber-400 ring-inset animate-pulse font-extrabold z-10" : ""
                           }`}
                         >
-                          <div className="text-[10px] font-extrabold tracking-tight truncate leading-none">
+                          <div className={`${sizes.dim} tracking-tight truncate leading-none`}>
                             {cut.length}×{cut.width}
                           </div>
                           {cut.label && (
-                            <div className="text-[8px] font-semibold truncate leading-none mt-0.5 opacity-90 uppercase font-mono max-w-full">
+                            <div className={`${sizes.label} truncate leading-none mt-0.5 opacity-90 uppercase font-mono max-w-full`}>
                               {cut.label}
                             </div>
                           )}
@@ -279,14 +304,51 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
                         </div>
                       );
                     })}
+
+                    {/* WASTE / LEFTOVER AREAS DISPLAY */}
+                    {board.wasteRects && board.wasteRects.map((rect, rectIdx) => {
+                      const sizes = getLabelSizes(rect.w, rect.h);
+                      // Only show waste label if it's reasonably large to fit some text
+                      const isLargeEnough = rect.w > 30 && rect.h > 15;
+                      return (
+                        <div
+                          key={`waste-${rectIdx}`}
+                          style={{
+                            left: `${(rect.x / board.originalLength) * 100}%`,
+                            top: `${(rect.y / board.originalWidth) * 100}%`,
+                            width: `${(rect.w / board.originalLength) * 100}%`,
+                            height: `${(rect.h / board.originalWidth) * 100}%`,
+                          }}
+                          className="absolute border border-dashed border-slate-800/80 bg-slate-900/10 text-slate-500/85 flex flex-col justify-center items-center p-0.5 select-none hover:bg-slate-900/20 transition-colors"
+                          title={`Leftover: ${rect.w.toFixed(0)} × ${rect.h.toFixed(0)}`}
+                        >
+                          {isLargeEnough ? (
+                            <>
+                              <div className={`${sizes.dim} tracking-tight truncate leading-none text-slate-550 font-mono font-bold`}>
+                                {rect.w.toFixed(0)}×{rect.h.toFixed(0)}
+                              </div>
+                              <div className="text-[7px] sm:text-[9px] font-semibold text-slate-650 tracking-wider uppercase truncate leading-none mt-1 opacity-70">
+                                Offcut
+                              </div>
+                            </>
+                          ) : (
+                            // Mini representation for tiny spaces
+                            <span className="text-[7px] font-mono text-slate-600 opacity-60">
+                              {rect.w.toFixed(0)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   /* 1D PROGRESS BAR RENDERING */
-                  <div className="relative h-10 w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-900 flex items-stretch">
+                  <div className="relative h-14 w-full bg-slate-950 rounded-xl overflow-hidden border border-slate-900 flex items-stretch">
                     {board.cuts.map((cut, cutIdx) => {
                       const cutWidth = (cut.length / board.originalLength) * 100;
                       const isChecked = checkedCuts[`${board.id}_${cutIdx}`];
                       const isActive = nextCutToExecute && nextCutToExecute.boardId === board.id && nextCutToExecute.cutIdx === cutIdx;
+                      const sizes = getLabelSizes(cut.length, 0);
                       
                       let bgStyle = isChecked 
                         ? "bg-emerald-500 text-emerald-950 border-emerald-400" 
@@ -297,17 +359,17 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
                           <div
                             style={{ width: `${cutWidth}%` }}
                             onClick={() => isSwipeMode && handleToggleCut(board.id, cutIdx)}
-                            className={`relative border-r border-slate-950 flex flex-col justify-center px-2 select-none transition-all duration-300 group ${bgStyle} ${
+                            className={`relative border-r border-slate-950 flex flex-col justify-center px-2.5 select-none transition-all duration-300 group ${bgStyle} ${
                               isSwipeMode ? "cursor-pointer" : ""
                             } ${
                               isActive && isSwipeMode ? "ring-2 ring-amber-400 ring-inset animate-pulse font-extrabold z-10" : ""
                             }`}
                           >
-                            <div className="text-[10px] font-bold tracking-tight truncate leading-none">
+                            <div className={`${sizes.dim} tracking-tight truncate leading-none`}>
                               {cut.length}{unit}
                             </div>
                             {cut.label && (
-                              <div className="text-[8px] font-medium truncate leading-none mt-0.5 opacity-80 uppercase font-mono">
+                              <div className={`${sizes.label} truncate leading-none mt-0.5 opacity-80 uppercase`}>
                                 {cut.label}
                               </div>
                             )}
@@ -337,10 +399,10 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf }: VisualCanva
                     {board.waste > 0 && (
                       <div
                         style={{ width: `${(board.waste / board.originalLength) * 100}%` }}
-                        className="bg-slate-900/60 border-l border-slate-900 flex flex-col justify-center items-end px-3 shrink-0 text-right text-slate-600 font-mono text-[9px]"
+                        className="bg-slate-900/60 border-l border-slate-900 flex flex-col justify-center items-end px-3 shrink-0 text-right text-slate-500 font-mono text-xs"
                       >
-                        <span className="font-bold">Waste</span>
-                        <span>{board.waste.toFixed(0)}{unit}</span>
+                        <span className="font-bold text-[10px] tracking-wide uppercase opacity-75">Waste</span>
+                        <span className="font-extrabold text-sm">{board.waste.toFixed(0)}{unit}</span>
                       </div>
                     )}
                   </div>

@@ -164,10 +164,11 @@ export function MaterialProfilePanel({ settings, setSettings }: MaterialProfileP
 // 2. QUICK PASTE CLI PANEL
 // ==========================================
 interface QuickPasteCLIProps {
-  onParse: (parsed: { length: number; quantity: number }[]) => void;
+  onParse: (parsed: { length: number; quantity: number; width?: number }[]) => void;
+  is2DMode: boolean;
 }
 
-export function QuickPasteCLI({ onParse }: QuickPasteCLIProps) {
+export function QuickPasteCLI({ onParse, is2DMode }: QuickPasteCLIProps) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -179,25 +180,80 @@ export function QuickPasteCLI({ onParse }: QuickPasteCLIProps) {
     }
 
     try {
-      const results: { length: number; quantity: number }[] = [];
+      const results: { length: number; quantity: number; width?: number }[] = [];
       const lines = text.split(/[\n,;]+/);
 
       for (let line of lines) {
         line = line.trim();
         if (!line) continue;
 
-        const parts = line.split(/\s*[xX@*]\s*/);
-        if (parts.length === 2) {
+        // Check if there is an '@' symbol separating quantity
+        const atParts = line.split(/\s*@\s*/);
+        if (atParts.length === 2) {
+          const qty = Math.round(parseFloat(atParts[1]));
+          const dims = atParts[0].split(/\s*[xX*]\s*/);
+          if (dims.length === 2 && !isNaN(qty)) {
+            const p1 = parseFloat(dims[0]);
+            const p2 = parseFloat(dims[1]);
+            if (!isNaN(p1) && !isNaN(p2)) {
+              results.push({ length: p1, width: p2, quantity: qty });
+              continue;
+            }
+          } else if (dims.length === 1 && !isNaN(qty)) {
+            const len = parseFloat(dims[0]);
+            if (!isNaN(len)) {
+              results.push({ length: len, quantity: qty });
+              continue;
+            }
+          }
+        }
+
+        // Otherwise split by standard delimiters (x, X, *)
+        const parts = line.split(/\s*[xX*]\s*/);
+        if (parts.length === 3) {
+          // Format: 4x1100x820 or 1100x820x4
+          const p1 = parseFloat(parts[0]);
+          const p2 = parseFloat(parts[1]);
+          const p3 = parseFloat(parts[2]);
+          if (!isNaN(p1) && !isNaN(p2) && !isNaN(p3)) {
+            let qty = 1;
+            let len = p1;
+            let wid = p2;
+            
+            // Heuristic to extract quantity: check if one of the outer parts is small and integer
+            if (p1 < 30 && Number.isInteger(p1) && (p2 >= 30 || p3 >= 30)) {
+              qty = Math.round(p1);
+              len = p2;
+              wid = p3;
+            } else if (p3 < 30 && Number.isInteger(p3) && (p1 >= 30 || p2 >= 30)) {
+              qty = Math.round(p3);
+              len = p1;
+              wid = p2;
+            } else {
+              qty = Math.round(p1);
+              len = p2;
+              wid = p3;
+            }
+            results.push({ length: len, width: wid, quantity: qty });
+          }
+        } else if (parts.length === 2) {
+          // Format: 4x1100 or 1100x820
           const p1 = parseFloat(parts[0]);
           const p2 = parseFloat(parts[1]);
           if (!isNaN(p1) && !isNaN(p2)) {
-            let qty = Math.round(p1);
-            let len = p2;
-            if (p1 > p2 && Number.isInteger(p2)) {
-              qty = Math.round(p2);
-              len = p1;
+            if (is2DMode && p1 >= 30 && p2 >= 30) {
+              // In 2D mode, if both are medium/large numbers, treat as length x width (qty = 1)
+              results.push({ length: p1, width: p2, quantity: 1 });
+            } else {
+              // Treat as quantity x length
+              let qty = Math.round(p1);
+              let len = p2;
+              if (p1 > p2 && Number.isInteger(p2)) {
+                qty = Math.round(p2);
+                len = p1;
+              }
+              results.push({ length: len, quantity: qty });
             }
-            results.push({ length: len, quantity: qty });
           }
         } else {
           const num = parseFloat(line);
@@ -208,7 +264,11 @@ export function QuickPasteCLI({ onParse }: QuickPasteCLIProps) {
       }
 
       if (results.length === 0) {
-        setError("Could not parse any valid cuts. Try: '4x1100' or '850 @ 3'");
+        setError(
+          is2DMode
+            ? "Could not parse any valid cuts. Try: '4x1100x820' or '1100x820 @ 4'"
+            : "Could not parse any valid cuts. Try: '4x1100' or '850 @ 3'"
+        );
         return;
       }
 
@@ -223,10 +283,14 @@ export function QuickPasteCLI({ onParse }: QuickPasteCLIProps) {
     <div className="space-y-3 flex-1 flex flex-col min-h-0">
       <div className="relative flex-1 flex flex-col min-h-0">
         <textarea
-          placeholder="Dump raw text here (e.g. 4x1100, 6x850, 3x400)"
+          placeholder={
+            is2DMode
+              ? "Dump raw text here (e.g. 4x1100x820, 6x850x600, or 1100x820 @ 4)"
+              : "Dump raw text here (e.g. 4x1100, 6x850, 3x400)"
+          }
           value={text}
           onChange={(e) => setText(e.target.value)}
-          className="w-full flex-1 min-h-[110px] bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl p-3.5 text-sm text-slate-300 font-mono placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 resize-none"
+          className="w-full flex-1 min-h-[110px] bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl p-3.5 text-sm text-slate-300 font-mono placeholder:text-slate-650 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 resize-none"
         />
         {error && (
           <p className="absolute bottom-2.5 left-2.5 text-xs text-rose-400 flex items-center gap-1.5 bg-rose-950/90 px-2.5 py-1 rounded border border-rose-900/55 font-sans">

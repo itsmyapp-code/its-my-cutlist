@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { 
   Settings, 
   Terminal, 
@@ -16,7 +17,8 @@ import {
   Info,
   CheckCircle,
   X,
-  CreditCard
+  CreditCard,
+  HelpCircle
 } from "lucide-react";
 import { BentoGrid, BentoBox } from "./BentoGrid";
 import { MaterialProfilePanel, QuickPasteCLI, PartMatrix, ScrapPile } from "./InputGrid";
@@ -126,30 +128,32 @@ export default function Workspace() {
   // ----------------------------------------------------
   // 4. ACTION HANDLERS
   // ----------------------------------------------------
-  const handleQuickPasteParse = (parsedItems: { length: number; quantity: number }[]) => {
-    const existingPartsMap = new Map(parts.map((p) => [p.length, p]));
+  const handleQuickPasteParse = (parsedItems: { length: number; quantity: number; width?: number }[]) => {
+    const existingPartsMap = new Map(parts.map((p) => [`${p.length}x${p.width || 0}`, p]));
     const updatedParts = [...parts];
 
     for (const item of parsedItems) {
+      const key = `${item.length}x${item.width || 0}`;
       // Check free limit restriction
-      if (!license.isPro && updatedParts.length >= 5 && !existingPartsMap.has(item.length)) {
+      if (!license.isPro && updatedParts.length >= 5 && !existingPartsMap.has(key)) {
         setIsUpgradeModalOpen(true);
         break; // stop adding if limit hit
       }
 
-      if (existingPartsMap.has(item.length)) {
-        // Increment quantity of existing length
-        const ext = existingPartsMap.get(item.length)!;
+      if (existingPartsMap.has(key)) {
+        // Increment quantity of existing length + width combination
+        const ext = existingPartsMap.get(key)!;
         ext.quantity += item.quantity;
       } else {
         const newPart: Part = {
           id: Math.random().toString(36).substr(2, 9),
           length: item.length,
+          width: item.width,
           quantity: item.quantity,
           label: `Imported`,
         };
         updatedParts.push(newPart);
-        existingPartsMap.set(item.length, newPart);
+        existingPartsMap.set(key, newPart);
       }
     }
 
@@ -212,6 +216,8 @@ export default function Workspace() {
     }
   };
 
+  const is2DMode = !!(settings.stockWidth && settings.stockWidth > 0);
+
   if (!mounted) {
     return (
       <div className="flex-1 flex items-center justify-center bg-slate-950 text-slate-400">
@@ -249,6 +255,14 @@ export default function Workspace() {
 
         {/* License Action / Summary */}
         <div className="flex items-center gap-3">
+          <Link
+            href="/help"
+            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 focus:outline-none"
+          >
+            <HelpCircle size={14} className="text-emerald-450" />
+            <span>Help Guide</span>
+          </Link>
+
           {license.isPro ? (
             <div className="flex items-center gap-3 bg-slate-900/60 border border-slate-800 rounded-xl px-3.5 py-2">
               <ShieldCheck size={16} className="text-emerald-400" />
@@ -301,7 +315,7 @@ export default function Workspace() {
             icon={<Terminal size={16} />}
             badge="Fast Import"
           >
-            <QuickPasteCLI onParse={handleQuickPasteParse} />
+            <QuickPasteCLI onParse={handleQuickPasteParse} is2DMode={is2DMode} />
           </BentoBox>
 
           {/* Box 3: Dynamic Part Matrix (Spreadsheet) */}

@@ -49,6 +49,7 @@ export interface BoardLayout {
   usedLength: number;    // For 1D tracking
   usedArea: number;      // For 2D tracking
   waste: number;         // Waste amount (length for 1D, area for 2D)
+  wasteRects?: { x: number; y: number; w: number; h: number }[];
 }
 
 export interface OptimizationResult {
@@ -420,6 +421,52 @@ function optimizeCutlist2D(
       }
     }
 
+    // Calculate layout waste rectangles
+    const wasteRects: { x: number; y: number; w: number; h: number }[] = [];
+
+    // Right side of shelves
+    for (const shelf of shelves) {
+      const rightW = boardL - shelf.nextX;
+      if (rightW > 0) {
+        wasteRects.push({
+          x: shelf.nextX,
+          y: shelf.y,
+          w: rightW,
+          h: shelf.height
+        });
+      }
+    }
+
+    // Vertical leftover space above each cut inside its shelf
+    for (const cut of board.cuts) {
+      const shelf = shelves.find(s => s.y === cut.y);
+      if (shelf) {
+        const cutH = cut.h || cut.width || 0;
+        const vertW = shelf.height - cutH;
+        if (vertW > 0) {
+          wasteRects.push({
+            x: cut.x || 0,
+            y: (cut.y || 0) + cutH,
+            w: cut.w || cut.length || 0,
+            h: vertW
+          });
+        }
+      }
+    }
+
+    // Unused top area of the board
+    const lastShelfY = shelves.length > 0 ? shelves[shelves.length - 1].y + shelves[shelves.length - 1].height + bladeKerf : 0;
+    const topH = boardW - lastShelfY;
+    if (topH > 0) {
+      wasteRects.push({
+        x: 0,
+        y: lastShelfY,
+        w: boardL,
+        h: topH
+      });
+    }
+
+    board.wasteRects = wasteRects.filter(r => r.w > 0.1 && r.h > 0.1);
     board.waste = (boardL * boardW) - board.usedArea;
     return remainingParts;
   };

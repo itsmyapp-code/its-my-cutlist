@@ -44,6 +44,12 @@ export default function Footer() {
         {/* Compliance Links */}
         <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 text-xs font-medium text-slate-450">
           <Link
+            href="/help"
+            className="hover:text-emerald-400 font-semibold text-slate-300 transition-colors focus:outline-none focus:underline"
+          >
+            Help &amp; Guide
+          </Link>
+          <Link
             href="/terms"
             className="hover:text-emerald-400 transition-colors focus:outline-none focus:underline"
           >
