@@ -302,6 +302,7 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf, settings, onA
                       const isActive = nextCutToExecute && nextCutToExecute.boardId === board.id && nextCutToExecute.cutIdx === cutIdx;
                       const cutW = cut.w || cut.length;
                       const cutH = cut.h || cut.width || 1;
+                      const isVerticalLabel = cutW < cutH * 0.42;
                       const sizes = getLabelSizes(cutW, cutH);
                       
                       let bgStyle = isChecked 
@@ -324,13 +325,28 @@ export function VisualCanvas({ result, unit, partsList, bladeKerf, settings, onA
                             isActive && isSwipeMode ? "ring-2 ring-amber-400 ring-inset animate-pulse font-extrabold z-10" : ""
                           }`}
                         >
-                          <div className={`${sizes.dim} tracking-tight truncate leading-none`}>
-                            {cut.length}×{cut.width}
-                          </div>
-                          {cut.label && (
-                            <div className={`${sizes.label} truncate leading-none mt-0.5 opacity-90 uppercase font-mono max-w-full`}>
-                              {cut.label}
+                          {isVerticalLabel ? (
+                            <div className="rotate-90 origin-center flex flex-col items-center justify-center max-w-full px-0.5">
+                              <div className={`${sizes.dim} tracking-tight leading-none whitespace-nowrap`}>
+                                {cut.length}×{cut.width}
+                              </div>
+                              {cut.label && (
+                                <div className={`${sizes.label} leading-none mt-0.5 opacity-90 uppercase font-mono whitespace-nowrap`}>
+                                  {cut.label}
+                                </div>
+                              )}
                             </div>
+                          ) : (
+                            <>
+                              <div className={`${sizes.dim} tracking-tight truncate leading-none`}>
+                                {cut.length}×{cut.width}
+                              </div>
+                              {cut.label && (
+                                <div className={`${sizes.label} truncate leading-none mt-0.5 opacity-90 uppercase font-mono max-w-full`}>
+                                  {cut.label}
+                                </div>
+                              )}
+                            </>
                           )}
                           {isChecked && (
                             <div className="absolute top-1 right-1 bg-slate-950/70 p-0.5 rounded-full text-emerald-400">
