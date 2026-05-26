@@ -10,7 +10,8 @@ import {
   Sparkles, 
   ArrowLeft,
   CheckCircle,
-  FileText
+  FileText,
+  Users
 } from "lucide-react";
 
 export const metadata = {
@@ -99,6 +100,67 @@ export default function HelpPage() {
 
           {/* Detailed Sections */}
           <div className="space-y-10">
+            <section className="space-y-4">
+              <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+                <FileText size={22} className="text-emerald-400" />
+                CSV Setup (Easy Mode)
+              </h2>
+              <p className="text-sm text-slate-300">
+                Import and export is now CSV-first and supports two material import formats so setup is quick for everyone.
+              </p>
+              <div className="bg-slate-900/20 p-6 rounded-xl border border-slate-900/80 space-y-3 text-sm text-slate-300">
+                <p><strong className="text-white">Materials page:</strong> You can import either:</p>
+                <ul className="list-disc pl-5 space-y-1.5">
+                  <li><strong>Material CSV:</strong> <span className="font-mono text-xs">name,type,thickness,length,width,unit</span></li>
+                  <li><strong>Job CSV:</strong> <span className="font-mono text-xs">recordType,... with setting rows (stockLength, stockWidth, unit, materialType, thickness)</span></li>
+                </ul>
+                <p>Use the built-in buttons:</p>
+                <ul className="list-disc pl-5 space-y-1.5">
+                  <li><strong>Copy Material CSV Template</strong></li>
+                  <li><strong>Copy Job CSV to Material Template</strong></li>
+                  <li><strong>Copy Job CSV Template</strong> (Data page)</li>
+                </ul>
+                <p><strong className="text-white">Data page:</strong> Export/Import full jobs as CSV only.</p>
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+                <Settings size={22} className="text-indigo-400" />
+                Menu, Kerf, and Machine Workflow
+              </h2>
+              <div className="bg-slate-900/20 p-6 rounded-xl border border-slate-900/80 space-y-3 text-sm text-slate-300">
+                <p>The hamburger menu now opens as a compact navigation list first. Pick a section to open its controls.</p>
+                <p>Kerf defaults are intentionally empty. Set blade kerf directly in <strong>Material &amp; Cut Profile</strong> to keep behavior explicit and avoid hidden presets.</p>
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+                <Users size={22} className="text-emerald-400" />
+                Developer Console
+              </h2>
+              <div className="bg-slate-900/20 p-6 rounded-xl border border-slate-900/80 space-y-3 text-sm text-slate-300">
+                <p>Developer page is available for the configured developer account and uses live Firestore user data.</p>
+                <ul className="list-disc pl-5 space-y-1.5">
+                  <li>View all accounts and access level status</li>
+                  <li>Change status (Free/Sync/Pro/Developer)</li>
+                  <li>Edit <strong>Device Limit (Allowed)</strong> for each account</li>
+                </ul>
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+                <Layers size={22} className="text-amber-400" />
+                Offcuts and Labels
+              </h2>
+              <div className="bg-slate-900/20 p-6 rounded-xl border border-slate-900/80 space-y-3 text-sm text-slate-300">
+                <p>Saving offcuts now includes material identity in labels so scrap entries show what material they belong to.</p>
+                <p>Different materials with the same dimensions are kept as separate scrap entries.</p>
+              </div>
+            </section>
+
             {/* Quick Paste CLI Syntax */}
             <section className="space-y-4">
               <h2 className="text-2xl font-bold text-white flex items-center gap-3">

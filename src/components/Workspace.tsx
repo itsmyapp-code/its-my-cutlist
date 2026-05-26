@@ -88,6 +88,16 @@ const MATERIAL_PRESET_CSV_TEMPLATE = [
   "CLS Timber,CLS,38x89mm,2400,0,mm",
 ].join("\n");
 
+const MATERIAL_FROM_JOB_CSV_TEMPLATE = [
+  "recordType,id,label,length,width,quantity,key,value",
+  "meta,,,,,,jobName,Kitchen Units",
+  "setting,,,,,,stockLength,2440",
+  "setting,,,,,,stockWidth,1220",
+  "setting,,,,,,unit,mm",
+  "setting,,,,,,materialType,MDF",
+  "setting,,,,,,thickness,18mm",
+].join("\n");
+
 const JOB_CSV_TEMPLATE = [
   "recordType,id,label,length,width,quantity,key,value",
   "meta,,,,,,jobName,Kitchen Units",
@@ -514,33 +524,70 @@ export default function Workspace() {
         .map((l) => l.trim())
         .filter(Boolean);
 
-      if (lines.length < 2 || !lines[0].toLowerCase().startsWith("name,type,thickness")) {
-        throw new Error("Invalid CSV header");
+      if (lines.length < 2) {
+        throw new Error("CSV is empty");
       }
 
-      const imported = lines.slice(1).map((line, idx) => {
-        const cols = line.split(",");
-        const unitVal = (cols[5] || "mm").trim();
-        return {
-          id: `imported_${Date.now()}_${idx}`,
-          name: (cols[0] || "Imported Material").trim(),
-          type: (cols[1] || "General").trim(),
-          thickness: (cols[2] || "Generic").trim(),
-          length: parseFloat((cols[3] || "0").trim()),
-          width: parseFloat((cols[4] || "0").trim()) || 0,
-          unit: (unitVal === "cm" || unitVal === "in" ? unitVal : "mm") as "mm" | "cm" | "in",
-        };
-      }).filter((p) => p.length > 0);
+      const header = lines[0].toLowerCase();
+      let imported: MaterialPreset[] = [];
+
+      if (header.startsWith("name,type,thickness")) {
+        imported = lines.slice(1).map((line, idx) => {
+          const cols = line.split(",");
+          const unitVal = (cols[5] || "mm").trim();
+          return {
+            id: `imported_${Date.now()}_${idx}`,
+            name: (cols[0] || "Imported Material").trim(),
+            type: (cols[1] || "General").trim(),
+            thickness: (cols[2] || "Generic").trim(),
+            length: parseFloat((cols[3] || "0").trim()),
+            width: parseFloat((cols[4] || "0").trim()) || 0,
+            unit: (unitVal === "cm" || unitVal === "in" ? unitVal : "mm") as "mm" | "cm" | "in",
+          };
+        }).filter((p) => p.length > 0);
+      } else if (header.startsWith("recordtype")) {
+        const kv: Record<string, string> = {};
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(",");
+          const recordType = (cols[0] || "").trim().toLowerCase();
+          const key = (cols[6] || "").trim();
+          const value = (cols[7] || "").trim();
+          if (recordType === "setting" && key) {
+            kv[key] = value;
+          }
+        }
+
+        const length = parseFloat(kv.stockLength || "0");
+        const width = parseFloat(kv.stockWidth || "0") || 0;
+        const unitVal = kv.unit || "mm";
+        if (length > 0) {
+          const type = kv.materialType || "General";
+          const thickness = kv.thickness || "Generic";
+          imported = [
+            {
+              id: `imported_job_${Date.now()}`,
+              name: `${type} ${thickness}`.trim(),
+              type,
+              thickness,
+              length,
+              width,
+              unit: (unitVal === "cm" || unitVal === "in" ? unitVal : "mm") as "mm" | "cm" | "in",
+            },
+          ];
+        }
+      } else {
+        throw new Error("Unknown CSV header");
+      }
 
       if (imported.length === 0) {
-        setPresetImportError("No valid presets found in CSV.");
+        setPresetImportError("No valid material rows found. Use a Material CSV or a Job CSV with stockLength.");
         return;
       }
 
       setMaterialPresets((prev) => [...imported, ...prev]);
       setPresetImportText("");
     } catch (e) {
-      setPresetImportError("Invalid preset CSV. Use the CSV template.");
+      setPresetImportError("Invalid CSV. Paste a Material CSV or Job CSV template.");
     }
   };
 
@@ -1292,11 +1339,18 @@ export default function Workspace() {
 
                   <div className="space-y-2 pt-2 border-t border-slate-850">
                     <h5 className="text-[11px] font-bold text-slate-350 uppercase tracking-wider">Import Material Presets</h5>
+                    <p className="text-[10px] text-slate-500">Accepts either Material CSV or Job CSV.</p>
                     <button
                       onClick={() => navigator.clipboard.writeText(MATERIAL_PRESET_CSV_TEMPLATE)}
                       className="w-full py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-lg text-[10px] font-bold text-slate-200 uppercase"
                     >
                       Copy Material CSV Template
+                    </button>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(MATERIAL_FROM_JOB_CSV_TEMPLATE)}
+                      className="w-full py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-lg text-[10px] font-bold text-slate-200 uppercase"
+                    >
+                      Copy Job CSV To Material Template
                     </button>
                     <textarea
                       value={presetImportText}
