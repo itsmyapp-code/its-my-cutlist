@@ -43,23 +43,31 @@ export function SharedInventory({
   const [formMaterial, setFormMaterial] = useState(settings.materialType || "");
   const [formThickness, setFormThickness] = useState(settings.thickness || "");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formLength) return;
+    setSubmitError(null);
     setIsSubmitting(true);
     try {
-      await onAddManualOffcut({
-        length: parseFloat(formLength),
-        width: formWidth ? parseFloat(formWidth) : undefined,
-        materialType: formMaterial || "General",
-        thickness: formThickness || "Generic"
-      });
+      await Promise.race([
+        onAddManualOffcut({
+          length: parseFloat(formLength),
+          width: formWidth ? parseFloat(formWidth) : undefined,
+          materialType: formMaterial || "General",
+          thickness: formThickness || "Generic"
+        }),
+        new Promise((_, reject) => {
+          setTimeout(() => reject(new Error("Publish timed out. Check connection and retry.")), 12000);
+        }),
+      ]);
       setFormLength("");
       setFormWidth("");
       setIsAdding(false);
     } catch (err) {
       console.error(err);
+      setSubmitError("Could not publish to shared stock. Please retry.");
     } finally {
       setIsSubmitting(false);
     }
@@ -190,6 +198,7 @@ export function SharedInventory({
           >
             {isSubmitting ? "Publishing..." : "Add to Shared Stock"}
           </button>
+          {submitError && <p className="text-[10px] text-rose-400">{submitError}</p>}
         </form>
       )}
 
