@@ -1705,6 +1705,7 @@ export default function Workspace() {
                     {board.cuts.map((cut, cutIdx) => {
                       const cutW = cut.w || cut.length;
                       const cutH = cut.h || cut.width || 1;
+                      const isVerticalLabel = cutW < cutH * 0.42;
                       return (
                         <div
                           key={cutIdx}
@@ -1716,8 +1717,17 @@ export default function Workspace() {
                           }}
                           className="absolute border border-black bg-slate-100 flex flex-col justify-center items-center p-1 text-black font-sans select-none"
                         >
-                          <span className="text-[9px] font-bold font-mono leading-none">{cut.length}×{cut.width}</span>
-                          {cut.label && <span className="text-[8px] truncate font-semibold uppercase leading-none mt-0.5">{cut.label}</span>}
+                          {isVerticalLabel ? (
+                            <div className="rotate-90 origin-center flex flex-col items-center justify-center">
+                              <span className="text-[9px] font-bold font-mono leading-none whitespace-nowrap">{cut.length}×{cut.width}</span>
+                              {cut.label && <span className="text-[8px] font-semibold uppercase leading-none mt-0.5 whitespace-nowrap">{cut.label}</span>}
+                            </div>
+                          ) : (
+                            <>
+                              <span className="text-[9px] font-bold font-mono leading-none">{cut.length}×{cut.width}</span>
+                              {cut.label && <span className="text-[8px] truncate font-semibold uppercase leading-none mt-0.5">{cut.label}</span>}
+                            </>
+                          )}
                         </div>
                       );
                     })}
