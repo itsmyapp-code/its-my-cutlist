@@ -70,16 +70,7 @@ interface JobHistoryEntry {
   };
 }
 
-const DEFAULT_MATERIAL_PRESETS: MaterialPreset[] = [
-  { id: "mr-mdf-18", name: "Moisture Resist MDF", length: 2440, width: 1220, type: "MDF", thickness: "18mm", unit: "mm" },
-  { id: "mr-mdf-12", name: "Moisture Resist MDF", length: 2440, width: 1220, type: "MDF", thickness: "12mm", unit: "mm" },
-  { id: "std-ply-18", name: "Birch Ply", length: 2440, width: 1220, type: "Plywood", thickness: "18mm", unit: "mm" },
-  { id: "std-ply-9", name: "Birch Ply", length: 2440, width: 1220, type: "Plywood", thickness: "9mm", unit: "mm" },
-  { id: "osb-11", name: "OSB 3", length: 2440, width: 1220, type: "OSB", thickness: "11mm", unit: "mm" },
-  { id: "chip-18", name: "Chipboard", length: 2440, width: 1220, type: "Chipboard", thickness: "18mm", unit: "mm" },
-  { id: "cls-24", name: "CLS Timber", length: 2400, width: 0, type: "CLS", thickness: "38x89mm", unit: "mm" },
-  { id: "cls-48", name: "CLS Timber", length: 4800, width: 0, type: "CLS", thickness: "38x89mm", unit: "mm" },
-];
+const DEFAULT_MATERIAL_PRESETS: MaterialPreset[] = [];
 
 const MACHINE_KERF_PRESETS = [
   { label: "Dewalt DWE7485", value: 2.2 },
@@ -89,6 +80,28 @@ const MACHINE_KERF_PRESETS = [
   { label: "Evolution R255", value: 2.4 },
   { label: "Bandsaw Generic", value: 1.5 },
 ];
+
+const MATERIAL_PRESET_CSV_TEMPLATE = [
+  "name,type,thickness,length,width,unit",
+  "Moisture Resist MDF,MDF,18mm,2440,1220,mm",
+  "CLS Timber,CLS,38x89mm,2400,0,mm",
+].join("\n");
+
+const JOB_CSV_TEMPLATE = [
+  "recordType,id,label,length,width,quantity,key,value",
+  "meta,,,,,,jobName,Kitchen Units",
+  "meta,,,,,,customer,Acme Homes",
+  "meta,,,,,,company,Its My App Ltd",
+  "meta,,,,,,operator,Martin",
+  "setting,,,,,,stockLength,2440",
+  "setting,,,,,,stockWidth,1220",
+  "setting,,,,,,bladeKerf,3",
+  "setting,,,,,,unit,mm",
+  "setting,,,,,,materialType,MDF",
+  "setting,,,,,,thickness,18mm",
+  "part,p1,Panel A,820,1100,2,,",
+  "scrap,s1,Offcut 1,600,300,1,,",
+].join("\n");
 
 export default function Workspace() {
   // ----------------------------------------------------
@@ -433,26 +446,38 @@ export default function Workspace() {
   const handleImportMaterialPresets = () => {
     setPresetImportError(null);
     try {
-      const parsed = JSON.parse(presetImportText);
-      const imported = (Array.isArray(parsed) ? parsed : []).map((p, idx) => ({
-        id: `imported_${Date.now()}_${idx}`,
-        name: String(p.name || "Imported Material"),
-        type: String(p.type || "General"),
-        thickness: String(p.thickness || "Generic"),
-        length: Number(p.length || 0),
-        width: Number(p.width || 0),
-        unit: (p.unit === "cm" || p.unit === "in" ? p.unit : "mm") as "mm" | "cm" | "in",
-      })).filter((p) => p.length > 0);
+      const lines = presetImportText
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      if (lines.length < 2 || !lines[0].toLowerCase().startsWith("name,type,thickness")) {
+        throw new Error("Invalid CSV header");
+      }
+
+      const imported = lines.slice(1).map((line, idx) => {
+        const cols = line.split(",");
+        const unitVal = (cols[5] || "mm").trim();
+        return {
+          id: `imported_${Date.now()}_${idx}`,
+          name: (cols[0] || "Imported Material").trim(),
+          type: (cols[1] || "General").trim(),
+          thickness: (cols[2] || "Generic").trim(),
+          length: parseFloat((cols[3] || "0").trim()),
+          width: parseFloat((cols[4] || "0").trim()) || 0,
+          unit: (unitVal === "cm" || unitVal === "in" ? unitVal : "mm") as "mm" | "cm" | "in",
+        };
+      }).filter((p) => p.length > 0);
 
       if (imported.length === 0) {
-        setPresetImportError("No valid presets found in JSON.");
+        setPresetImportError("No valid presets found in CSV.");
         return;
       }
 
       setMaterialPresets((prev) => [...imported, ...prev]);
       setPresetImportText("");
     } catch (e) {
-      setPresetImportError("Invalid preset JSON. Use an array of preset objects.");
+      setPresetImportError("Invalid preset CSV. Use the CSV template.");
     }
   };
 
@@ -502,12 +527,29 @@ export default function Workspace() {
   };
 
   const handleExportWorkspace = () => {
-    const backupData = {
-      settings,
-      parts,
-      scraps,
-    };
-    navigator.clipboard.writeText(JSON.stringify(backupData, null, 2));
+    const rows: string[] = ["recordType,id,label,length,width,quantity,key,value"];
+
+    rows.push(`meta,,,,,,jobName,${jobName}`);
+    rows.push(`meta,,,,,,customer,${customerName}`);
+    rows.push(`meta,,,,,,company,${companyName}`);
+    rows.push(`meta,,,,,,operator,${operatorName}`);
+
+    rows.push(`setting,,,,,,stockLength,${settings.stockLength}`);
+    rows.push(`setting,,,,,,stockWidth,${settings.stockWidth ?? ""}`);
+    rows.push(`setting,,,,,,bladeKerf,${settings.bladeKerf}`);
+    rows.push(`setting,,,,,,unit,${settings.unit}`);
+    rows.push(`setting,,,,,,materialType,${settings.materialType || ""}`);
+    rows.push(`setting,,,,,,thickness,${settings.thickness || ""}`);
+
+    parts.forEach((p) => {
+      rows.push(`part,${p.id},${p.label || ""},${p.length},${p.width ?? ""},${p.quantity},,`);
+    });
+
+    scraps.forEach((s) => {
+      rows.push(`scrap,${s.id},${s.label || ""},${s.length},${s.width ?? ""},${s.quantity},,`);
+    });
+
+    navigator.clipboard.writeText(rows.join("\n"));
     setCopiedBackup(true);
     setTimeout(() => setCopiedBackup(false), 2000);
   };
@@ -516,24 +558,80 @@ export default function Workspace() {
     setImportError(null);
     setImportSuccess(null);
     try {
-      const parsed = JSON.parse(importJsonText.trim());
-      if (parsed.settings) {
-        setSettings(parsed.settings);
+      const lines = importJsonText
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      if (lines.length < 2 || !lines[0].toLowerCase().startsWith("recordtype")) {
+        throw new Error("Invalid CSV header");
       }
-      if (parsed.parts) {
-        setParts(parsed.parts);
+
+      const newSettings: StockSettings = { ...settings };
+      const newParts: Part[] = [];
+      const newScraps: Scrap[] = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(",");
+        const recordType = (cols[0] || "").trim();
+        const id = (cols[1] || "").trim();
+        const label = (cols[2] || "").trim();
+        const length = parseFloat((cols[3] || "").trim());
+        const width = parseFloat((cols[4] || "").trim());
+        const quantity = parseInt((cols[5] || "").trim(), 10);
+        const key = (cols[6] || "").trim();
+        const value = (cols[7] || "").trim();
+
+        if (recordType === "meta") {
+          if (key === "jobName") setJobName(value);
+          if (key === "customer") setCustomerName(value);
+          if (key === "company") setCompanyName(value);
+          if (key === "operator") setOperatorName(value);
+        }
+
+        if (recordType === "setting") {
+          if (key === "stockLength") newSettings.stockLength = parseFloat(value) || newSettings.stockLength;
+          if (key === "stockWidth") newSettings.stockWidth = value ? parseFloat(value) : undefined;
+          if (key === "bladeKerf") newSettings.bladeKerf = parseFloat(value) || newSettings.bladeKerf;
+          if (key === "unit" && (value === "mm" || value === "cm" || value === "in")) newSettings.unit = value;
+          if (key === "materialType") newSettings.materialType = value;
+          if (key === "thickness") newSettings.thickness = value;
+        }
+
+        if (recordType === "part") {
+          if (!id || !Number.isFinite(length) || !Number.isFinite(quantity)) continue;
+          newParts.push({
+            id,
+            label: label || undefined,
+            length,
+            width: Number.isFinite(width) ? width : undefined,
+            quantity,
+          });
+        }
+
+        if (recordType === "scrap") {
+          if (!id || !Number.isFinite(length) || !Number.isFinite(quantity)) continue;
+          newScraps.push({
+            id,
+            label: label || undefined,
+            length,
+            width: Number.isFinite(width) ? width : undefined,
+            quantity,
+          });
+        }
       }
-      if (parsed.scraps) {
-        setScraps(parsed.scraps);
-      }
-      setImportSuccess("Job loaded successfully!");
+
+      setSettings(newSettings);
+      setParts(newParts);
+      setScraps(newScraps);
+      setImportSuccess("CSV job loaded successfully!");
       setImportJsonText("");
       setTimeout(() => {
         setIsDrawerOpen(false);
         setImportSuccess(null);
       }, 1500);
     } catch (e) {
-      setImportError("Invalid JSON format. Check your pasted string.");
+      setImportError("Invalid CSV format. Use the CSV template.");
     }
   };
 
@@ -1083,14 +1181,20 @@ export default function Workspace() {
 
                   <div className="space-y-2 pt-2 border-t border-slate-850">
                     <h5 className="text-[11px] font-bold text-slate-350 uppercase tracking-wider">Import Material Presets</h5>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(MATERIAL_PRESET_CSV_TEMPLATE)}
+                      className="w-full py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-lg text-[10px] font-bold text-slate-200 uppercase"
+                    >
+                      Copy Material CSV Template
+                    </button>
                     <textarea
                       value={presetImportText}
                       onChange={(e) => setPresetImportText(e.target.value)}
-                      placeholder='[{"name":"MR MDF","type":"MDF","thickness":"18mm","length":2440,"width":1220,"unit":"mm"}]'
+                      placeholder={MATERIAL_PRESET_CSV_TEMPLATE}
                       className="w-full h-24 bg-slate-950 border border-slate-800 rounded-lg p-2 text-[10px] text-slate-300 font-mono focus:outline-none"
                     />
                     {presetImportError && <p className="text-[10px] text-rose-400">{presetImportError}</p>}
-                    <button onClick={handleImportMaterialPresets} className="w-full py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold text-white uppercase tracking-wider">Import Presets JSON</button>
+                    <button onClick={handleImportMaterialPresets} className="w-full py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold text-white uppercase tracking-wider">Import Presets CSV</button>
                   </div>
                 </div>
               )}
@@ -1188,12 +1292,13 @@ export default function Workspace() {
                   </div>
 
                   <div className="space-y-2 pt-2 border-t border-slate-850">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Import &amp; Export JSON</h4>
-                    <button onClick={handleExportWorkspace} className="w-full py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-lg text-xs font-bold text-slate-200 uppercase">{copiedBackup ? "Copied" : "Export Job JSON"}</button>
-                    <textarea value={importJsonText} onChange={(e) => setImportJsonText(e.target.value)} placeholder="Paste job JSON here to import..." className="w-full h-24 bg-slate-950 border border-slate-800 rounded-lg p-2 text-[10px] font-mono text-slate-300 focus:outline-none" />
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Import &amp; Export CSV</h4>
+                    <button onClick={handleExportWorkspace} className="w-full py-2 bg-slate-950 hover:bg-slate-850 border border-slate-800 rounded-lg text-xs font-bold text-slate-200 uppercase">{copiedBackup ? "Copied" : "Export Job CSV"}</button>
+                    <button onClick={() => navigator.clipboard.writeText(JOB_CSV_TEMPLATE)} className="w-full py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-lg text-[10px] font-bold text-slate-200 uppercase">Copy Job CSV Template</button>
+                    <textarea value={importJsonText} onChange={(e) => setImportJsonText(e.target.value)} placeholder={JOB_CSV_TEMPLATE} className="w-full h-24 bg-slate-950 border border-slate-800 rounded-lg p-2 text-[10px] font-mono text-slate-300 focus:outline-none" />
                     {importError && <p className="text-[10px] text-rose-400">{importError}</p>}
                     {importSuccess && <p className="text-[10px] text-emerald-400">{importSuccess}</p>}
-                    <button onClick={handleImportWorkspace} className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-xs font-bold uppercase">Load JSON Job</button>
+                    <button onClick={handleImportWorkspace} className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-xs font-bold uppercase">Load CSV Job</button>
                   </div>
 
                   <div className="space-y-2 pt-2 border-t border-slate-850">
