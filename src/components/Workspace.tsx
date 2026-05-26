@@ -835,24 +835,27 @@ export default function Workspace() {
 
                 {/* Sub-section: 2D Sheet Presets */}
                 <div className="space-y-2">
-                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Sheet Materials (2D Planar)</span>
+                  <span className="block text-xs font-bold text-slate-400 uppercase tracking-wide">Sheet Materials (2D Planar)</span>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { name: "MDF 18mm", length: 2440, width: 1220, type: "MDF", thick: "18mm", unit: "mm" },
                       { name: "MDF 12mm", length: 2440, width: 1220, type: "MDF", thick: "12mm", unit: "mm" },
+                      { name: "MDF 6mm", length: 2440, width: 1220, type: "MDF", thick: "6mm", unit: "mm" },
                       { name: "Plywood 18mm", length: 2440, width: 1220, type: "Plywood", thick: "18mm", unit: "mm" },
                       { name: "Plywood 12mm", length: 2440, width: 1220, type: "Plywood", thick: "12mm", unit: "mm" },
+                      { name: "Plywood 9mm", length: 2440, width: 1220, type: "Plywood", thick: "9mm", unit: "mm" },
                       { name: "Euro Ply 18mm", length: 2500, width: 1250, type: "Euro Plywood", thick: "18mm", unit: "mm" },
-                      { name: "US 4x8 ft (3/4\")", length: 96, width: 48, type: "Plywood", thick: "3/4\"", unit: "in" },
-                      { name: "US 4x8 ft (1/2\")", length: 96, width: 48, type: "Plywood", thick: "1/2\"", unit: "in" },
+                      { name: "OSB 11mm", length: 2440, width: 1220, type: "OSB", thick: "11mm", unit: "mm" },
+                      { name: "Chipboard 18mm", length: 2440, width: 1220, type: "Chipboard", thick: "18mm", unit: "mm" },
+                      { name: "Hardboard 3mm", length: 2440, width: 1220, type: "Hardboard", thick: "3mm", unit: "mm" },
                     ].map((preset, idx) => (
                       <button
                         key={idx}
                         onClick={() => handleLoadPreset(preset)}
                         className="p-2.5 bg-slate-950 hover:bg-slate-850 hover:border-emerald-500/40 border border-slate-850 text-left rounded-xl transition-all group focus:outline-none"
                       >
-                        <span className="block text-xs font-bold text-slate-200 group-hover:text-emerald-400 transition-colors">{preset.name}</span>
-                        <span className="block text-[9px] text-slate-500 font-mono mt-0.5">
+                        <span className="block text-sm font-bold text-slate-200 group-hover:text-emerald-400 transition-colors">{preset.name}</span>
+                        <span className="block text-xs text-slate-500 font-mono mt-0.5">
                           {preset.length} × {preset.width} {preset.unit}
                         </span>
                       </button>
@@ -862,14 +865,14 @@ export default function Workspace() {
 
                 {/* Sub-section: 1D Length Presets */}
                 <div className="space-y-2 pt-2">
-                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide">Timber &amp; Planks (1D Linear)</span>
+                  <span className="block text-xs font-bold text-slate-400 uppercase tracking-wide">Timber &amp; Planks (1D Linear)</span>
                   <div className="grid grid-cols-2 gap-2">
                     {[
                       { name: "CLS Timber 2.4m", length: 2400, width: 0, type: "CLS Timber", thick: "38x89mm", unit: "mm" },
                       { name: "CLS Timber 3.0m", length: 3000, width: 0, type: "CLS Timber", thick: "38x89mm", unit: "mm" },
                       { name: "CLS Timber 4.8m", length: 4800, width: 0, type: "CLS Timber", thick: "38x89mm", unit: "mm" },
-                      { name: "US 2x4 Stud 8ft", length: 96, width: 0, type: "Lumber", thick: "2x4", unit: "in" },
-                      { name: "US 2x4 Stud 10ft", length: 120, width: 0, type: "Lumber", thick: "2x4", unit: "in" },
+                      { name: "Sawn Batten 2.4m", length: 2400, width: 0, type: "Sawn Batten", thick: "25x50mm", unit: "mm" },
+                      { name: "Sawn Batten 3.6m", length: 3600, width: 0, type: "Sawn Batten", thick: "25x50mm", unit: "mm" },
                       { name: "Metal Section 6m", length: 6000, width: 0, type: "Steel Profile", thick: "3mm Wall", unit: "mm" },
                     ].map((preset, idx) => (
                       <button
@@ -877,8 +880,8 @@ export default function Workspace() {
                         onClick={() => handleLoadPreset(preset)}
                         className="p-2.5 bg-slate-955 hover:bg-slate-850 hover:border-indigo-500/40 border border-slate-850 text-left rounded-xl transition-all group focus:outline-none"
                       >
-                        <span className="block text-xs font-bold text-slate-200 group-hover:text-indigo-400 transition-colors">{preset.name}</span>
-                        <span className="block text-[9px] text-slate-500 font-mono mt-0.5">
+                        <span className="block text-sm font-bold text-slate-200 group-hover:text-indigo-400 transition-colors">{preset.name}</span>
+                        <span className="block text-xs text-slate-500 font-mono mt-0.5">
                           {preset.length} {preset.unit} length
                         </span>
                       </button>
@@ -1216,22 +1219,12 @@ export default function Workspace() {
               />
             </BentoBox>
 
-            {/* Box 2: Quick Paste CLI */}
+            {/* Box 2: Cut Parts List */}
             <BentoBox 
-              title="Quick Paste CLI" 
-              subtitle="Dump list from SMS, email or CSV"
-              icon={<Terminal size={16} />}
-              badge="Fast Import"
-            >
-              <QuickPasteCLI onParse={handleQuickPasteParse} is2DMode={is2DMode} />
-            </BentoBox>
-
-            {/* Box 3: Dynamic Part Matrix */}
-            <BentoBox 
-              title="Dynamic Part Matrix" 
-              subtitle="Specify required dimensions and quantities"
+              title="Cut Parts List" 
+              subtitle="Add parts manually or paste a list to import"
               icon={<Layers size={16} />}
-              badge="Input Matrix"
+              badge="Input"
             >
               <PartMatrix
                 parts={parts}
@@ -1240,42 +1233,37 @@ export default function Workspace() {
                 isPro={license.isPro}
                 onUpgradeTrigger={() => setIsUpgradeModalOpen(true)}
               />
+              {/* Collapsible Quick Paste Import */}
+              <QuickPasteCLI onParse={handleQuickPasteParse} is2DMode={is2DMode} />
             </BentoBox>
 
-            {/* Box 4: The Scrap Pile */}
+            {/* Box 3: Offcuts & Workshop Stock (merged scrap pile + shared inventory) */}
             <BentoBox 
-              title="The Scrap Pile" 
-              subtitle="Prioritize cutting scrap pieces first"
-              icon={<Layers size={16} />}
-              badge="Offcuts"
-              badgeType="info"
+              title="Offcuts & Workshop Stock" 
+              subtitle="Local scraps and shared team inventory"
+              icon={<Database size={16} />}
+              badge={user ? "Cloud Sync" : "Offcuts"}
+              badgeType={user ? "success" : "info"}
             >
               <ScrapPile
                 scraps={scraps}
                 setScraps={setScraps}
                 settings={settings}
               />
-            </BentoBox>
-
-            {/* Box 5: Shared Workshop Inventory */}
-            <BentoBox
-              title="Shared Workshop Stock"
-              subtitle="Pull and push offcuts from/to central inventory"
-              icon={<Database size={16} />}
-              badge={user ? "Cloud Sync" : "Login Required"}
-              badgeType={user ? "success" : "warning"}
-            >
-              <SharedInventory
-                user={user}
-                centralInventory={centralInventory}
-                loadingCentralInventory={loadingCentralInventory}
-                onPullToScraps={handlePullToScraps}
-                onReleaseOffcut={handleReleaseOffcut}
-                onConsumeOffcut={handleConsumeOffcut}
-                onAddManualOffcut={handleAddManualOffcut}
-                onTriggerLogin={() => setIsAuthModalOpen(true)}
-                settings={settings}
-              />
+              {/* Shared Workshop Inventory (cloud) */}
+              <div className="mt-4 pt-4 border-t border-slate-800/60">
+                <SharedInventory
+                  user={user}
+                  centralInventory={centralInventory}
+                  loadingCentralInventory={loadingCentralInventory}
+                  onPullToScraps={handlePullToScraps}
+                  onReleaseOffcut={handleReleaseOffcut}
+                  onConsumeOffcut={handleConsumeOffcut}
+                  onAddManualOffcut={handleAddManualOffcut}
+                  onTriggerLogin={() => setIsAuthModalOpen(true)}
+                  settings={settings}
+                />
+              </div>
             </BentoBox>
           </div>
 

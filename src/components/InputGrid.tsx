@@ -204,6 +204,7 @@ interface QuickPasteCLIProps {
 export function QuickPasteCLI({ onParse, is2DMode }: QuickPasteCLIProps) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const handleParse = () => {
     setError(null);
@@ -307,39 +308,56 @@ export function QuickPasteCLI({ onParse, is2DMode }: QuickPasteCLIProps) {
 
       onParse(results);
       setText("");
+      setIsExpanded(false);
     } catch (e) {
       setError("Error parsing list. Please verify the format.");
     }
   };
 
   return (
-    <div className="space-y-3 flex-1 flex flex-col min-h-0">
-      <div className="relative flex-1 flex flex-col min-h-0">
-        <textarea
-          placeholder={
-            is2DMode
-              ? "Dump raw text here (e.g. 4x1100x820, 6x850x600, or 1100x820 @ 4)"
-              : "Dump raw text here (e.g. 4x1100, 6x850, 3x400)"
-          }
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          className="w-full flex-1 min-h-[110px] bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl p-3.5 text-sm text-slate-300 font-mono placeholder:text-slate-650 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 resize-none"
-        />
-        {error && (
-          <p className="absolute bottom-2.5 left-2.5 text-xs text-rose-400 flex items-center gap-1.5 bg-rose-950/90 px-2.5 py-1 rounded border border-rose-900/55 font-sans">
-            <AlertCircle size={12} />
-            {error}
-          </p>
-        )}
-      </div>
-
+    <div className="pt-3 mt-3 border-t border-slate-800/60">
       <button
-        onClick={handleParse}
-        className="w-full py-2.5 px-4 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 border border-slate-700/60 rounded-xl text-sm font-bold text-white tracking-wide uppercase transition-all flex items-center justify-center gap-2 group cursor-pointer"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between text-xs font-bold text-slate-400 hover:text-slate-200 uppercase tracking-wider transition-colors focus:outline-none cursor-pointer py-1"
       >
-        <span>Parse List</span>
-        <ChevronRight size={15} className="group-hover:translate-x-0.5 transition-transform" />
+        <div className="flex items-center gap-2">
+          <Terminal size={14} />
+          <span>Quick Paste Import</span>
+        </div>
+        <ChevronRight size={14} className={`transition-transform ${isExpanded ? "rotate-90" : ""}`} />
       </button>
+
+      {isExpanded && (
+        <div className="space-y-3 mt-3">
+          <p className="text-xs text-slate-500">Paste a list from a message, email, or spreadsheet to bulk-add parts.</p>
+          <div className="relative">
+            <textarea
+              placeholder={
+                is2DMode
+                  ? "e.g. 4x1100x820, 6x850x600, or 1100x820 @ 4"
+                  : "e.g. 4x1100, 6x850, 3x400"
+              }
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              className="w-full min-h-[80px] bg-slate-950 border border-slate-800 focus:border-emerald-500/50 rounded-xl p-3 text-sm text-slate-300 font-mono placeholder:text-slate-650 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 resize-none"
+            />
+            {error && (
+              <p className="absolute bottom-2.5 left-2.5 text-xs text-rose-400 flex items-center gap-1.5 bg-rose-950/90 px-2.5 py-1 rounded border border-rose-900/55 font-sans">
+                <AlertCircle size={12} />
+                {error}
+              </p>
+            )}
+          </div>
+
+          <button
+            onClick={handleParse}
+            className="w-full py-2 px-4 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 border border-slate-700/60 rounded-xl text-sm font-bold text-white tracking-wide uppercase transition-all flex items-center justify-center gap-2 group cursor-pointer"
+          >
+            <span>Parse &amp; Add Parts</span>
+            <ChevronRight size={15} className="group-hover:translate-x-0.5 transition-transform" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
