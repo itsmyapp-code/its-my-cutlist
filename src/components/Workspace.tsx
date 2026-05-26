@@ -72,6 +72,14 @@ interface JobHistoryEntry {
 
 const DEFAULT_MATERIAL_PRESETS: MaterialPreset[] = [];
 
+const LEGACY_BUILTIN_PRESET_NAMES = new Set([
+  "Moisture Resist MDF",
+  "Birch Ply",
+  "OSB 3",
+  "Chipboard",
+  "CLS Timber",
+]);
+
 const MACHINE_KERF_PRESETS = [
   { label: "Dewalt DWE7485", value: 2.2 },
   { label: "Makita MLT100", value: 3.0 },
@@ -199,7 +207,18 @@ export default function Workspace() {
 
     const storedPresets = localStorage.getItem("itsmycut_material_presets");
     if (storedPresets) {
-      try { setMaterialPresets(JSON.parse(storedPresets)); } catch (e) {}
+      try {
+        const parsed = JSON.parse(storedPresets);
+        if (Array.isArray(parsed)) {
+          const cleaned = parsed.filter(
+            (p: any) => !LEGACY_BUILTIN_PRESET_NAMES.has(String(p?.name || "").trim())
+          );
+          setMaterialPresets(cleaned);
+          if (cleaned.length !== parsed.length) {
+            localStorage.setItem("itsmycut_material_presets", JSON.stringify(cleaned));
+          }
+        }
+      } catch (e) {}
     }
 
     const storedHistory = localStorage.getItem("itsmycut_job_history");
