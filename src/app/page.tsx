@@ -4,7 +4,7 @@ import CookieBanner from "@/components/CookieBanner";
 
 export const metadata = {
   title: "Its My Cutlist | Free 1D & 2D Bin-Packing Optimizer",
-  description: "Saves material waste down to near 0%. Optimize cuts for timber, metal, PVC, and sheets entirely in your browser. Fast, secure, and private by design.",
+  description: "Saves material waste down to near 0%. Optimize cuts for timber, metal, PVC, and sheets entirely in your browser. Fast, secure, with optional real-time cloud team sharing.",
 };
 
 export default function Home() {

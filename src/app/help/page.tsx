@@ -216,7 +216,7 @@ export default function HelpPage() {
                 Workshop Security &amp; Offline Operation
               </h2>
               <p className="text-sm text-slate-350 leading-relaxed">
-                Its My Cutlist operates with a <strong>Zero Server Architecture</strong>. All calculations, layout packs, settings, and parts list sheets are compiled and saved entirely on your local device via Web Browser storage. No layout data is ever sent to external cloud services, giving you 100% data privacy and instant off-grid workshop reliability.
+                Its My Cutlist is designed as an <strong>Offline-First Application</strong>. All calculations, layout packs, and settings run locally in your web browser. For collaborative teams, you can optionally connect a Firebase Workshop account to share offcuts databases and sync project lists in real-time. Without cloud sync, all your data remains strictly local and private.
               </p>
             </section>
           </div>

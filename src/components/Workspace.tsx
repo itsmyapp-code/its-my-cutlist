@@ -21,12 +21,22 @@ import {
   CreditCard,
   HelpCircle,
   Menu,
-  Copy
+  Copy,
+  Cloud,
+  LogOut,
+  RefreshCw,
+  Database,
+  Users
 } from "lucide-react";
 import { BentoGrid, BentoBox } from "./BentoGrid";
 import { MaterialProfilePanel, QuickPasteCLI, PartMatrix, ScrapPile } from "./InputGrid";
 import { VisualCanvas } from "./VisualCanvas";
 import { optimizeCutlist, Part, Scrap, StockSettings, LicenseState } from "@/utils/optimizer";
+import { auth, db } from "@/utils/firebase";
+import { onAuthStateChanged, User, signOut } from "firebase/auth";
+import { doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateDoc } from "firebase/firestore";
+import AuthModal from "./AuthModal";
+import { SharedInventory } from "./SharedInventory";
 
 export default function Workspace() {
   // ----------------------------------------------------
@@ -50,6 +60,15 @@ export default function Workspace() {
   // Unique Device ID
   const [deviceId, setDeviceId] = useState("");
 
+  // Firebase Auth & Cloud Sync State
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [cloudSyncing, setCloudSyncing] = useState(false);
+  const [cloudSyncSuccess, setCloudSyncSuccess] = useState<string | null>(null);
+  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
+  const [centralInventory, setCentralInventory] = useState<any[]>([]);
+  const [loadingCentralInventory, setLoadingCentralInventory] = useState(false);
+
   // UI state
   const [licenseKeyInput, setLicenseKeyInput] = useState("");
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
@@ -61,6 +80,8 @@ export default function Workspace() {
   const [activationLoading, setActivationLoading] = useState(false);
   const [activationSuccess, setActivationSuccess] = useState<string | null>(null);
   const [activationError, setActivationError] = useState<string | null>(null);
+  const [usersList, setUsersList] = useState<any[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
 
   // ----------------------------------------------------
   // 2. LIFECYCLE & LOCALSTORAGE SYNC
@@ -339,6 +360,356 @@ export default function Workspace() {
     }
   };
 
+  // Firebase Auth State Observer
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        fetchCentralInventory(currentUser);
+        // Sync user profile and check for Pro access
+        try {
+          const userRef = doc(db, "users", currentUser.uid);
+          let userSnap = await getDoc(userRef);
+          
+          if (!userSnap.exists()) {
+            const isAdmin = currentUser.email === "martin@cozens.me.uk" || currentUser.email === "martincozens@gmail.com";
+            const profile = {
+              uid: currentUser.uid,
+              email: currentUser.email,
+              accessLevel: isAdmin ? "developer" : "free",
+              role: isAdmin ? "admin" : "user",
+              createdAt: new Date().toISOString(),
+            };
+            await setDoc(userRef, profile);
+            userSnap = await getDoc(userRef);
+          }
+          
+          const data = userSnap.data();
+          if (data && (data.accessLevel === "pro" || data.accessLevel === "developer")) {
+            setLicense({
+              isPro: true,
+              licenseKey: "CLOUD-ACTIVATED",
+              activationToken: "cloud",
+              deviceCount: 1,
+            });
+          } else {
+            // Revert to localStorage check if not pro in cloud
+            const storedToken = localStorage.getItem("itsmycut_pro_token");
+            const storedKey = localStorage.getItem("itsmycut_pro_key");
+            if (storedToken && storedKey) {
+              try {
+                const payload = JSON.parse(atob(storedToken.split(".")[0]));
+                if (payload.activated && payload.licenseKey === storedKey) {
+                  setLicense({
+                    isPro: true,
+                    licenseKey: storedKey,
+                    activationToken: storedToken,
+                    deviceCount: payload.deviceCount,
+                  });
+                  return;
+                }
+              } catch (e) {}
+            }
+            setLicense({ isPro: false });
+          }
+        } catch (err) {
+          console.error("Error syncing user profile:", err);
+        }
+      } else {
+        setCentralInventory([]);
+        // Revert to localStorage license if signed out
+        const storedToken = localStorage.getItem("itsmycut_pro_token");
+        const storedKey = localStorage.getItem("itsmycut_pro_key");
+        if (storedToken && storedKey) {
+          try {
+            const payload = JSON.parse(atob(storedToken.split(".")[0]));
+            if (payload.activated && payload.licenseKey === storedKey) {
+              setLicense({
+                isPro: true,
+                licenseKey: storedKey,
+                activationToken: storedToken,
+                deviceCount: payload.deviceCount,
+              });
+              return;
+            }
+          } catch (e) {}
+        }
+        setLicense({ isPro: false });
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const fetchCentralInventory = async (currentUser?: User | null) => {
+    const activeUser = currentUser || user;
+    if (!activeUser) return;
+    setLoadingCentralInventory(true);
+    try {
+      const q = query(collection(db, "offcuts_inventory"), where("status", "==", "available"));
+      const querySnapshot = await getDocs(q);
+      const items: any[] = [];
+      querySnapshot.forEach((doc) => {
+        items.push({ id: doc.id, ...doc.data() });
+      });
+      setCentralInventory(items);
+    } catch (err) {
+      console.error("Error fetching central inventory:", err);
+    } finally {
+      setLoadingCentralInventory(false);
+    }
+  };
+
+  const handleSaveJobToCloud = async () => {
+    if (!user) return;
+    setCloudSyncing(true);
+    setCloudSyncSuccess(null);
+    setCloudSyncError(null);
+    try {
+      await setDoc(doc(db, "jobs", user.uid), {
+        settings,
+        parts,
+        scraps,
+        updatedAt: new Date().toISOString(),
+        email: user.email
+      });
+      setCloudSyncSuccess("Cockpit state synced to cloud!");
+      setTimeout(() => setCloudSyncSuccess(null), 3000);
+    } catch (err: any) {
+      console.error("Cloud sync error:", err);
+      setCloudSyncError(err.message || "Failed to sync to cloud.");
+      setTimeout(() => setCloudSyncError(null), 4000);
+    } finally {
+      setCloudSyncing(false);
+    }
+  };
+
+  const handleLoadJobFromCloud = async () => {
+    if (!user) return;
+    setCloudSyncing(true);
+    setCloudSyncSuccess(null);
+    setCloudSyncError(null);
+    try {
+      const docSnap = await getDoc(doc(db, "jobs", user.uid));
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data.settings) setSettings(data.settings);
+        if (data.parts) setParts(data.parts);
+        if (data.scraps) setScraps(data.scraps);
+        setCloudSyncSuccess("Cockpit loaded from cloud!");
+        setTimeout(() => setCloudSyncSuccess(null), 3000);
+      } else {
+        setCloudSyncError("No cloud saved job found for this account.");
+        setTimeout(() => setCloudSyncError(null), 4000);
+      }
+    } catch (err: any) {
+      console.error("Load cloud job error:", err);
+      setCloudSyncError(err.message || "Failed to load cloud job.");
+      setTimeout(() => setCloudSyncError(null), 4000);
+    } finally {
+      setCloudSyncing(false);
+    }
+  };
+
+  const fetchUsersList = async () => {
+    setLoadingUsers(true);
+    try {
+      const querySnapshot = await getDocs(collection(db, "users"));
+      const items: any[] = [];
+      querySnapshot.forEach((doc) => {
+        items.push(doc.data());
+      });
+      // Sort alphabetically by email
+      items.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
+      setUsersList(items);
+    } catch (err) {
+      console.error("Error fetching user list:", err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleUpdateUserAccess = async (targetUid: string, newAccess: string) => {
+    try {
+      const userRef = doc(db, "users", targetUid);
+      await updateDoc(userRef, {
+        accessLevel: newAccess
+      });
+      setUsersList(prev => prev.map(u => u.uid === targetUid ? { ...u, accessLevel: newAccess } : u));
+    } catch (err) {
+      console.error("Error updating user access:", err);
+      alert("Failed to update user access level.");
+    }
+  };
+
+  const handlePublishOffcuts = async () => {
+    if (!user) return;
+    setCloudSyncing(true);
+    setCloudSyncSuccess(null);
+    setCloudSyncError(null);
+    try {
+      let count = 0;
+      const { boards } = optimizationResult;
+      for (const board of boards) {
+        if (is2DMode && board.wasteRects) {
+          for (const r of board.wasteRects) {
+            if (r.w >= 100 && r.h >= 100) {
+              await addDoc(collection(db, "offcuts_inventory"), {
+                materialType: settings.materialType || "General Board",
+                thickness: settings.thickness || "Generic",
+                length: Math.round(r.w),
+                width: Math.round(r.h),
+                quantity: 1,
+                status: "available",
+                createdByUser: user.email,
+                createdAt: new Date().toISOString(),
+              });
+              count++;
+            }
+          }
+        } else if (!is2DMode && board.waste > 100) {
+          await addDoc(collection(db, "offcuts_inventory"), {
+            materialType: settings.materialType || "CLS Timber",
+            thickness: settings.thickness || "Generic",
+            length: Math.round(board.waste),
+            width: 0,
+            quantity: 1,
+            status: "available",
+            createdByUser: user.email,
+            createdAt: new Date().toISOString(),
+          });
+          count++;
+        }
+      }
+      await fetchCentralInventory(user);
+      setCloudSyncSuccess(`Successfully published ${count} offcuts to central stock!`);
+      setTimeout(() => setCloudSyncSuccess(null), 3000);
+    } catch (err: any) {
+      console.error("Publish offcuts error:", err);
+      setCloudSyncError(err.message || "Failed to publish offcuts.");
+      setTimeout(() => setCloudSyncError(null), 4000);
+    } finally {
+      setCloudSyncing(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      setCloudSyncSuccess("Signed out successfully.");
+      setTimeout(() => setCloudSyncSuccess(null), 2000);
+    } catch (err: any) {
+      console.error("Sign out error:", err);
+    }
+  };
+
+  const handlePullToScraps = async (item: any) => {
+    if (!user) return;
+    try {
+      // 1. Add to local scraps
+      setScraps((prev) => {
+        const roundedLength = Math.round(item.length);
+        const roundedWidth = item.width ? Math.round(item.width) : undefined;
+        const existing = prev.find(
+          (s) => s.length === roundedLength && s.width === roundedWidth
+        );
+        if (existing) {
+          return prev.map((s) =>
+            s.length === roundedLength && s.width === roundedWidth
+              ? { ...s, quantity: s.quantity + 1 }
+              : s
+          );
+        } else {
+          return [
+            ...prev,
+            {
+              id: "scrap_" + Math.random().toString(36).substr(2, 9),
+              length: roundedLength,
+              width: roundedWidth,
+              quantity: 1,
+              label: `${item.materialType} ${item.thickness}`,
+            },
+          ];
+        }
+      });
+
+      // 2. Mark reserved in Firestore
+      const docRef = doc(db, "offcuts_inventory", item.id);
+      await updateDoc(docRef, {
+        status: "reserved",
+        reservedByUser: user.email,
+        reservedAt: new Date().toISOString(),
+      });
+      await fetchCentralInventory(user);
+      setCloudSyncSuccess("Offcut claimed & added to your scraps!");
+      setTimeout(() => setCloudSyncSuccess(null), 3000);
+    } catch (err: any) {
+      console.error("Error pulling scrap:", err);
+      setCloudSyncError("Failed to claim offcut.");
+      setTimeout(() => setCloudSyncError(null), 3000);
+    }
+  };
+
+  const handleReleaseOffcut = async (itemId: string) => {
+    if (!user) return;
+    try {
+      const docRef = doc(db, "offcuts_inventory", itemId);
+      await updateDoc(docRef, {
+        status: "available",
+        reservedByUser: null,
+        reservedAt: null,
+      });
+      await fetchCentralInventory(user);
+      setCloudSyncSuccess("Offcut returned to stock pool.");
+      setTimeout(() => setCloudSyncSuccess(null), 3000);
+    } catch (err: any) {
+      console.error("Error releasing offcut:", err);
+    }
+  };
+
+  const handleConsumeOffcut = async (itemId: string) => {
+    if (!user) return;
+    try {
+      const docRef = doc(db, "offcuts_inventory", itemId);
+      await updateDoc(docRef, {
+        status: "consumed",
+        consumedAt: new Date().toISOString(),
+      });
+      await fetchCentralInventory(user);
+      setCloudSyncSuccess("Offcut marked as consumed/cut.");
+      setTimeout(() => setCloudSyncSuccess(null), 3000);
+    } catch (err: any) {
+      console.error("Error consuming offcut:", err);
+    }
+  };
+
+  const handleAddManualOffcut = async (offcut: {
+    length: number;
+    width?: number;
+    materialType: string;
+    thickness: string;
+  }) => {
+    if (!user) return;
+    try {
+      await addDoc(collection(db, "offcuts_inventory"), {
+        materialType: offcut.materialType,
+        thickness: offcut.thickness,
+        length: Math.round(offcut.length),
+        width: offcut.width ? Math.round(offcut.width) : 0,
+        quantity: 1,
+        status: "available",
+        createdByUser: user.email,
+        createdAt: new Date().toISOString(),
+      });
+      await fetchCentralInventory(user);
+      setCloudSyncSuccess("Manual offcut published to workshop stock!");
+      setTimeout(() => setCloudSyncSuccess(null), 3000);
+    } catch (err: any) {
+      console.error("Error publishing offcut:", err);
+      setCloudSyncError("Failed to publish manual offcut.");
+      setTimeout(() => setCloudSyncError(null), 3000);
+    }
+  };
+
   const is2DMode = !!(settings.stockWidth && settings.stockWidth > 0);
 
   if (!mounted) {
@@ -384,14 +755,31 @@ export default function Workspace() {
           </div>
 
           <div className="flex items-center gap-3 text-xs font-mono text-slate-400">
-            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-850">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-              100% Offline Engine
-            </span>
-            <span className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-850">
-              <span className="h-1.5 w-1.5 rounded-full bg-indigo-400"></span>
-              Private by Design
-            </span>
+            {user ? (
+              <div className="flex items-center gap-2">
+                <span className="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-850">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span className="text-[10px] text-slate-400 truncate max-w-[120px]">{user.email}</span>
+                </span>
+                <button
+                  onClick={handleSaveJobToCloud}
+                  disabled={cloudSyncing}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-400 rounded-xl text-xs font-bold uppercase tracking-wider transition-all focus:outline-none disabled:opacity-50"
+                  title="Upload configuration to Firebase cloud storage"
+                >
+                  {cloudSyncing ? <RefreshCw size={14} className="animate-spin" /> : <Cloud size={14} />}
+                  <span>Sync</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsAuthModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-emerald-500/30 text-slate-350 hover:text-white rounded-xl text-xs font-bold uppercase tracking-wider transition-all focus:outline-none"
+              >
+                <Cloud size={14} />
+                <span>Cloud Login</span>
+              </button>
+            )}
 
             {/* Hamburger Options Trigger */}
             <button
@@ -578,6 +966,152 @@ export default function Workspace() {
                 )}
               </div>
 
+              {/* Section: Firebase Cloud Sync */}
+              <div className="space-y-3 pt-2 border-t border-slate-850">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Firebase Team &amp; Cloud</h4>
+                {user ? (
+                  <div className="p-4 bg-slate-955/60 border border-slate-850 rounded-xl space-y-3">
+                    <div className="flex items-center gap-2 text-emerald-400">
+                      <Cloud size={16} className="animate-pulse" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-white">Workshop Sync Connected</span>
+                    </div>
+                    <div className="font-mono text-[10px] space-y-1.5 text-slate-350">
+                      <div className="flex justify-between">
+                        <span>Account:</span>
+                        <span className="text-slate-200 truncate max-w-[180px]" title={user.email ?? undefined}>{user.email}</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={handleSaveJobToCloud}
+                        disabled={cloudSyncing}
+                        className="py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-400 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1 focus:outline-none disabled:opacity-50"
+                      >
+                        {cloudSyncing ? <RefreshCw size={12} className="animate-spin" /> : <Cloud size={12} />}
+                        Save Job
+                      </button>
+                      <button
+                        onClick={handleLoadJobFromCloud}
+                        disabled={cloudSyncing}
+                        className="py-2 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 text-indigo-400 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1 focus:outline-none disabled:opacity-50"
+                      >
+                        {cloudSyncing ? <RefreshCw size={12} className="animate-spin" /> : <Cloud size={12} />}
+                        Load Job
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={handlePublishOffcuts}
+                      disabled={cloudSyncing}
+                      className="w-full py-2 bg-emerald-500 hover:bg-emerald-450 text-slate-955 rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none disabled:opacity-50"
+                    >
+                      <Database size={12} />
+                      Publish Current Offcuts to Stock
+                    </button>
+
+                    <button
+                      onClick={handleSignOut}
+                      className="w-full py-1.5 bg-rose-955/20 hover:bg-rose-955/40 border border-rose-900/30 text-rose-400 hover:text-rose-350 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all focus:outline-none"
+                    >
+                      Sign Out
+                    </button>
+
+                    {/* Admin User Management Dashboard */}
+                    {(user.email === "martin@cozens.me.uk" || user.email === "martincozens@gmail.com") && (
+                      <div className="mt-4 pt-3 border-t border-slate-800 space-y-2.5">
+                        <div className="flex items-center justify-between text-emerald-400">
+                          <div className="flex items-center gap-1.5">
+                            <Users size={12} />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-200">Workshop Admin Console</span>
+                          </div>
+                          <button 
+                            onClick={fetchUsersList}
+                            className="p-1 hover:bg-slate-850 text-slate-400 hover:text-white rounded transition-colors"
+                            title="Reload users"
+                          >
+                            <RefreshCw size={10} className={loadingUsers ? "animate-spin" : ""} />
+                          </button>
+                        </div>
+
+                        <p className="text-[9px] text-slate-500 leading-normal font-medium">
+                          Manage registered accounts and adjust free/pro license tiers.
+                        </p>
+
+                        {loadingUsers ? (
+                          <div className="py-4 text-center">
+                            <span className="text-[9px] font-mono text-slate-500">Querying database...</span>
+                          </div>
+                        ) : usersList.length === 0 ? (
+                          <button
+                            onClick={fetchUsersList}
+                            type="button"
+                            className="w-full py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-350 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all"
+                          >
+                            Load Registered Users
+                          </button>
+                        ) : (
+                          <div className="max-h-48 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                            {usersList.map((usr) => (
+                              <div key={usr.uid} className="p-2 bg-slate-950 border border-slate-850 rounded-lg space-y-1.5">
+                                <div className="flex justify-between items-baseline min-w-0">
+                                  <span className="text-[9px] font-mono text-slate-200 truncate max-w-[130px]" title={usr.email}>{usr.email}</span>
+                                  <span className="text-[8px] font-mono text-slate-650">
+                                    {usr.createdAt ? new Date(usr.createdAt).toLocaleDateString('en-GB') : ""}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-[8px] font-mono text-slate-500">Tier: <strong className="text-emerald-450 uppercase">{usr.accessLevel || "free"}</strong></span>
+                                  <div className="flex gap-1">
+                                    <button
+                                      onClick={() => handleUpdateUserAccess(usr.uid, "free")}
+                                      type="button"
+                                      className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${usr.accessLevel === "free" || !usr.accessLevel ? "bg-slate-800 text-slate-350" : "bg-slate-900 text-slate-600 hover:text-slate-400"}`}
+                                    >
+                                      Free
+                                    </button>
+                                    <button
+                                      onClick={() => handleUpdateUserAccess(usr.uid, "pro")}
+                                      type="button"
+                                      className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${usr.accessLevel === "pro" ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" : "bg-slate-900 text-slate-600 hover:text-emerald-400"}`}
+                                    >
+                                      Pro
+                                    </button>
+                                    <button
+                                      onClick={() => handleUpdateUserAccess(usr.uid, "developer")}
+                                      type="button"
+                                      className={`px-1 py-0.5 rounded text-[8px] font-bold uppercase ${usr.accessLevel === "developer" ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30" : "bg-slate-900 text-slate-600 hover:text-indigo-400"}`}
+                                    >
+                                      Dev
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <p className="text-[11px] text-slate-500">
+                      Sign in with your workshop account to backup your Cutlist, share stock inventory, and collaborate with your team.
+                    </p>
+                    <button
+                      onClick={() => {
+                        setIsDrawerOpen(false);
+                        setIsAuthModalOpen(true);
+                      }}
+                      className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-450 text-slate-955 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 focus:outline-none"
+                    >
+                      <Cloud size={14} />
+                      Connect Workshop Account
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Section 4: Import/Export Backup */}
               <div className="space-y-3 pt-2 border-t border-slate-850">
                 <div className="flex items-center justify-between">
@@ -722,6 +1256,27 @@ export default function Workspace() {
                 settings={settings}
               />
             </BentoBox>
+
+            {/* Box 5: Shared Workshop Inventory */}
+            <BentoBox
+              title="Shared Workshop Stock"
+              subtitle="Pull and push offcuts from/to central inventory"
+              icon={<Database size={16} />}
+              badge={user ? "Cloud Sync" : "Login Required"}
+              badgeType={user ? "success" : "warning"}
+            >
+              <SharedInventory
+                user={user}
+                centralInventory={centralInventory}
+                loadingCentralInventory={loadingCentralInventory}
+                onPullToScraps={handlePullToScraps}
+                onReleaseOffcut={handleReleaseOffcut}
+                onConsumeOffcut={handleConsumeOffcut}
+                onAddManualOffcut={handleAddManualOffcut}
+                onTriggerLogin={() => setIsAuthModalOpen(true)}
+                settings={settings}
+              />
+            </BentoBox>
           </div>
 
           {/* RIGHT COLUMN: RENDER CANVAS & MANIFEST (Span 7, row-span match) */}
@@ -845,6 +1400,36 @@ export default function Workspace() {
             </div>
           </div>
         )}
+
+        {/* AUTH MODAL */}
+        {isAuthModalOpen && (
+          <AuthModal
+            isOpen={isAuthModalOpen}
+            onClose={() => setIsAuthModalOpen(false)}
+            onSuccess={() => {
+              setCloudSyncSuccess("Login successful!");
+              setTimeout(() => setCloudSyncSuccess(null), 3000);
+            }}
+          />
+        )}
+
+        {/* Floating Status Notification Toast */}
+        {(cloudSyncSuccess || cloudSyncError) && (
+          <div className="fixed bottom-6 right-6 z-50 max-w-sm animate-in fade-in slide-in-from-bottom-5 duration-300">
+            <div className={`p-4 rounded-2xl border shadow-2xl backdrop-blur-md flex items-center gap-3 ${
+              cloudSyncSuccess 
+                ? "bg-slate-900/95 border-emerald-500/30 text-emerald-400" 
+                : "bg-slate-900/95 border-rose-500/30 text-rose-450"
+            }`}>
+              <div className={`p-1.5 rounded-lg ${cloudSyncSuccess ? "bg-emerald-500/10" : "bg-rose-500/10"}`}>
+                {cloudSyncSuccess ? <Cloud size={16} className="text-emerald-400 animate-pulse" /> : <Cloud size={16} className="text-rose-400" />}
+              </div>
+              <span className="text-xs font-bold font-mono tracking-wide">
+                {cloudSyncSuccess || cloudSyncError}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ---------------------------------------------------- */}
@@ -910,6 +1495,7 @@ export default function Workspace() {
             <thead>
               <tr className="border-b border-black">
                 <th className="py-1 font-bold">Part Label</th>
+                <th className="py-1 font-bold">Material &amp; Thickness</th>
                 <th className="py-1 font-bold">Required Size</th>
                 <th className="py-1 font-bold text-center">Qty Required</th>
                 <th className="py-1 font-bold text-center">Status</th>
@@ -923,6 +1509,7 @@ export default function Workspace() {
                 return (
                   <tr key={p.id} className="border-b border-slate-200">
                     <td className="py-1.5 font-semibold uppercase font-mono">{p.label || "Imported Part"}</td>
+                    <td className="py-1.5 font-mono text-slate-700">{settings.materialType || "Standard"} - {settings.thickness || "Not Spec'd"}</td>
                     <td className="py-1.5 font-mono">{p.length}{p.width ? ` x ${p.width}` : ""} {settings.unit}</td>
                     <td className="py-1.5 text-center font-mono">{p.quantity}</td>
                     <td className="py-1.5 text-center">
@@ -947,9 +1534,14 @@ export default function Workspace() {
             return (
               <div key={board.id} className="page-break-inside-avoid border border-slate-300 p-4 rounded-xl bg-white mb-6">
                 <div className="flex justify-between items-center border-b border-slate-200 pb-2 mb-4">
-                  <span className="text-sm font-bold">
-                    Board #{bIdx + 1} - {isScrap ? "Scrap Offcut Board" : "Stock Board"}
-                  </span>
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold">
+                      Board #{bIdx + 1} - {isScrap ? "Scrap Offcut Board" : "Stock Board"}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
+                      Material: {settings.materialType || "Standard"} ({settings.thickness || "Not Spec'd"})
+                    </span>
+                  </div>
                   <span className="text-xs font-mono font-bold">
                     Size: {board.originalLength}{is2DMode ? ` x ${board.originalWidth}` : ""} {settings.unit}
                   </span>

@@ -78,7 +78,7 @@ export default function Footer() {
         {/* Security & Offline Indicator */}
         <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
           <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span>Zero Server / Private by Design</span>
+          <span>Offline-First / Optional Team Sync</span>
         </div>
       </div>
     </footer>

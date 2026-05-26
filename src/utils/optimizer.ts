@@ -340,135 +340,140 @@ function optimizeCutlist2D(
   let stockBoardCounter = 0;
   let scrapBoardCounter = 0;
 
-  // Helper structure for 2D packing shelves
-  interface Shelf {
-    y: number;      // Y coordinate of the shelf
-    height: number; // Height of this shelf
-    nextX: number;  // Next available X coordinate on this shelf
+  interface FreeRect {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
   }
 
-  // Packs a list of parts into a single board of size (boardL, boardW)
+  // Packs a list of parts into a single board of size (boardL, boardW) using Guillotine split
   const tryPackBoard2D = (
     board: BoardLayout,
     partsToPack: FlatPart2D[]
   ): FlatPart2D[] => {
     const boardL = board.originalLength;
     const boardW = board.originalWidth;
-    const shelves: Shelf[] = [];
+    
+    // Start with the entire board as one free rectangle
+    let freeRects: FreeRect[] = [
+      { x: 0, y: 0, w: boardL, h: boardW }
+    ];
+    
     const remainingParts: FlatPart2D[] = [];
 
     for (const part of partsToPack) {
-      let placed = false;
+      let bestRectIdx = -1;
+      let bestOrient = { l: 0, w: 0 };
+      let bestScore = Infinity; // We want to minimize the score (Best Short Side Fit)
 
-      // Allow 90-degree rotation if it helps place
-      const orientations = [
-        { l: part.length, w: part.width },
-        { l: part.width, w: part.length }, // rotated
-      ];
+      // Evaluate all free rectangles for this part
+      for (let i = 0; i < freeRects.length; i++) {
+        const rect = freeRects[i];
+        const orientations = [
+          { l: part.length, w: part.width },
+          { l: part.width, w: part.length }
+        ];
 
-      for (const orient of orientations) {
-        // Can it even fit on this board?
-        if (orient.l > boardL || orient.w > boardW) continue;
-
-        // Try existing shelves
-        for (const shelf of shelves) {
-          const neededX = shelf.nextX === 0 ? orient.l : orient.l + bladeKerf;
-          if (shelf.nextX + neededX <= boardL && orient.w <= shelf.height) {
-            board.cuts.push({
-              partId: part.id,
-              label: part.label,
-              length: orient.l,
-              width: orient.w,
-              x: shelf.nextX + (shelf.nextX === 0 ? 0 : bladeKerf),
-              y: shelf.y,
-              w: orient.l,
-              h: orient.w,
-            });
-            shelf.nextX += neededX;
-            board.usedArea += orient.l * orient.w;
-            placed = true;
-            break;
+        for (const orient of orientations) {
+          if (orient.l <= rect.w && orient.w <= rect.h) {
+            // Best Short Side Fit (BSSF) score
+            const leftoverW = rect.w - orient.l;
+            const leftoverH = rect.h - orient.w;
+            const shortSideFit = Math.min(leftoverW, leftoverH);
+            
+            if (shortSideFit < bestScore) {
+              bestScore = shortSideFit;
+              bestRectIdx = i;
+              bestOrient = orient;
+            }
           }
-        }
-
-        if (placed) break;
-
-        // Try creating a new shelf
-        const lastShelfY = shelves.length > 0 ? shelves[shelves.length - 1].y + shelves[shelves.length - 1].height + bladeKerf : 0;
-        if (lastShelfY + orient.w <= boardW) {
-          const newShelf: Shelf = {
-            y: lastShelfY,
-            height: orient.w,
-            nextX: orient.l,
-          };
-          shelves.push(newShelf);
-          board.cuts.push({
-            partId: part.id,
-            label: part.label,
-            length: orient.l,
-            width: orient.w,
-            x: 0,
-            y: newShelf.y,
-            w: orient.l,
-            h: orient.w,
-          });
-          board.usedArea += orient.l * orient.w;
-          placed = true;
-          break;
         }
       }
 
-      if (!placed) {
+      // If we found a free rectangle that fits this part
+      if (bestRectIdx !== -1) {
+        const rect = freeRects[bestRectIdx];
+        freeRects.splice(bestRectIdx, 1);
+
+        // Place the part at the top-left of the free rectangle
+        board.cuts.push({
+          partId: part.id,
+          label: part.label,
+          length: bestOrient.l,
+          width: bestOrient.w,
+          x: rect.x,
+          y: rect.y,
+          w: bestOrient.l,
+          h: bestOrient.w,
+        });
+        board.usedArea += bestOrient.l * bestOrient.w;
+
+        // Calculate the leftover spaces
+        const leftoverW = rect.w - bestOrient.l - bladeKerf;
+        const leftoverH = rect.h - bestOrient.w - bladeKerf;
+
+        // We can split the remaining area vertically or horizontally
+        // Option A: Split vertically (vertical cut down the entire rect)
+        //   - Right rect: x = rect.x + bestOrient.l + bladeKerf, y = rect.y, w = leftoverW, h = rect.h
+        //   - Bottom rect: x = rect.x, y = rect.y + bestOrient.w + bladeKerf, w = bestOrient.l, h = leftoverH
+        // Option B: Split horizontally (horizontal cut across the entire rect)
+        //   - Right rect: x = rect.x + bestOrient.l + bladeKerf, y = rect.y, w = leftoverW, h = bestOrient.w
+        //   - Bottom rect: x = rect.x, y = rect.y + bestOrient.w + bladeKerf, w = rect.w, h = leftoverH
+        
+        const areaA = Math.max(leftoverW * rect.h, bestOrient.l * leftoverH);
+        const areaB = Math.max(leftoverW * bestOrient.w, rect.w * leftoverH);
+
+        // Split in direction that maximizes the area of the largest child rectangle (MAS)
+        const splitVertically = areaA >= areaB;
+
+        if (splitVertically) {
+          if (leftoverW > 0.01 && rect.h > 0.01) {
+            freeRects.push({
+              x: rect.x + bestOrient.l + bladeKerf,
+              y: rect.y,
+              w: leftoverW,
+              h: rect.h
+            });
+          }
+          if (bestOrient.l > 0.01 && leftoverH > 0.01) {
+            freeRects.push({
+              x: rect.x,
+              y: rect.y + bestOrient.w + bladeKerf,
+              w: bestOrient.l,
+              h: leftoverH
+            });
+          }
+        } else {
+          if (leftoverW > 0.01 && bestOrient.w > 0.01) {
+            freeRects.push({
+              x: rect.x + bestOrient.l + bladeKerf,
+              y: rect.y,
+              w: leftoverW,
+              h: bestOrient.w
+            });
+          }
+          if (rect.w > 0.01 && leftoverH > 0.01) {
+            freeRects.push({
+              x: rect.x,
+              y: rect.y + bestOrient.w + bladeKerf,
+              w: rect.w,
+              h: leftoverH
+            });
+          }
+        }
+      } else {
         remainingParts.push(part);
       }
     }
 
-    // Calculate layout waste rectangles
-    const wasteRects: { x: number; y: number; w: number; h: number }[] = [];
+    board.wasteRects = freeRects.map(r => ({
+      x: r.x,
+      y: r.y,
+      w: r.w,
+      h: r.h
+    })).filter(r => r.w > 0.1 && r.h > 0.1);
 
-    // Right side of shelves
-    for (const shelf of shelves) {
-      const rightW = boardL - shelf.nextX;
-      if (rightW > 0) {
-        wasteRects.push({
-          x: shelf.nextX,
-          y: shelf.y,
-          w: rightW,
-          h: shelf.height
-        });
-      }
-    }
-
-    // Vertical leftover space above each cut inside its shelf
-    for (const cut of board.cuts) {
-      const shelf = shelves.find(s => s.y === cut.y);
-      if (shelf) {
-        const cutH = cut.h || cut.width || 0;
-        const vertW = shelf.height - cutH;
-        if (vertW > 0) {
-          wasteRects.push({
-            x: cut.x || 0,
-            y: (cut.y || 0) + cutH,
-            w: cut.w || cut.length || 0,
-            h: vertW
-          });
-        }
-      }
-    }
-
-    // Unused top area of the board
-    const lastShelfY = shelves.length > 0 ? shelves[shelves.length - 1].y + shelves[shelves.length - 1].height + bladeKerf : 0;
-    const topH = boardW - lastShelfY;
-    if (topH > 0) {
-      wasteRects.push({
-        x: 0,
-        y: lastShelfY,
-        w: boardL,
-        h: topH
-      });
-    }
-
-    board.wasteRects = wasteRects.filter(r => r.w > 0.1 && r.h > 0.1);
     board.waste = (boardL * boardW) - board.usedArea;
     return remainingParts;
   };

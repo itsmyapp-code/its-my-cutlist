@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Its My Cutlist | Free 1D & 2D Bin-Packing Optimizer",
-  description: "Optimize timber, metal, PVC, and sheet cuts to reduce material waste down to near 0%. 100% offline and private.",
+  description: "Optimize timber, metal, PVC, and sheet cuts to reduce material waste down to near 0%. Offline-first with optional real-time cloud team sync.",
   manifest: "/site.webmanifest",
   appleWebApp: {
     capable: true,
