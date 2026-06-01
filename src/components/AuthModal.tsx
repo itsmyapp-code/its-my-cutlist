@@ -13,9 +13,10 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  hideCloseButton?: boolean;
 }
 
-export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
+export default function AuthModal({ isOpen, onClose, onSuccess, hideCloseButton }: AuthModalProps) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -104,12 +105,14 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
               {isSignUp ? "Register to save offcuts centrally" : "Access your shared workshop database"}
             </p>
           </div>
-          <button 
-            onClick={onClose}
-            className="p-1.5 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white rounded-lg transition-all focus:outline-none"
-          >
-            <X size={16} />
-          </button>
+          {!hideCloseButton && (
+            <button 
+              onClick={onClose}
+              className="p-1.5 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white rounded-lg transition-all focus:outline-none"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
 
         {/* Form Body */}

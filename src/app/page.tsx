@@ -1,6 +1,7 @@
 import Workspace from "@/components/Workspace";
 import Footer from "@/components/Footer";
 import CookieBanner from "@/components/CookieBanner";
+import AuthGuard from "@/components/AuthGuard";
 
 export const metadata = {
   title: "Its My Cutlist | Free 1D & 2D Bin-Packing Optimizer",
@@ -15,7 +16,9 @@ export default function Home() {
 
       {/* Cockpit Workspace (Sticky Header is now managed inside Workspace for interactive presets) */}
       <main className="flex-1 flex flex-col relative z-10 print:bg-white print:text-black">
-        <Workspace />
+        <AuthGuard>
+          <Workspace />
+        </AuthGuard>
       </main>
 
       {/* Compliance & Footers */}

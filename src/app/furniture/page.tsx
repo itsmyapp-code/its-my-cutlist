@@ -6,6 +6,7 @@ import Link from "next/link";
 import HamburgerMenu from "@/components/furniture/HamburgerMenu";
 import HelpModal from "@/components/furniture/HelpModal";
 import PartsList from "@/components/furniture/PartsList";
+import AuthGuard from "@/components/AuthGuard";
 import {
   ArrowLeft,
   Loader2,
@@ -361,7 +362,8 @@ export default function FurniturePage() {
   }, [pieces, viewSettings.activeFilter]);
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500 selection:text-slate-950">
+    <AuthGuard>
+      <div className="flex flex-col min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500 selection:text-slate-950">
       {/* Background gradient */}
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(16,185,129,0.04),rgba(255,255,255,0))] pointer-events-none" />
 
@@ -634,5 +636,6 @@ export default function FurniturePage() {
         </div>
       )}
     </div>
+    </AuthGuard>
   );
 }

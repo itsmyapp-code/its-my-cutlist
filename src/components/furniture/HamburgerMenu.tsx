@@ -11,8 +11,11 @@ import {
   ChevronDown,
   ChevronUp,
   Menu,
+  LogOut,
 } from 'lucide-react';
 import type { FurnitureConfig, ViewSettings, ShelfBaseOption, BackFitOption } from '@/types/furniture';
+import { auth } from '@/utils/firebase';
+import { signOut } from 'firebase/auth';
 
 interface HamburgerMenuProps {
   config: FurnitureConfig;
@@ -458,6 +461,18 @@ export default function HamburgerMenu({
                     />
                   </div>
                 </div>
+              </section>
+
+              <hr className="border-slate-850" />
+              
+              <section className="pt-2">
+                <button
+                  onClick={() => signOut(auth)}
+                  className="w-full flex items-center justify-center gap-2 py-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 hover:border-rose-500/40 rounded-xl text-xs font-bold uppercase tracking-wider transition-all"
+                >
+                  <LogOut size={16} />
+                  Sign Out
+                </button>
               </section>
             </div>
           </aside>
