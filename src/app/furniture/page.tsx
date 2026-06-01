@@ -13,6 +13,9 @@ import {
   Box,
   Sparkles,
   CreditCard,
+  Menu,
+  SlidersHorizontal,
+  ChevronRight
 } from "lucide-react";
 import { auth, db } from "@/utils/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
@@ -68,6 +71,7 @@ export default function FurniturePage() {
   });
 
   const [activeTab, setActiveTab] = useState<"3d" | "cutlist">("3d");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const [jobName, setJobName] = useState("");
   const [customerName, setCustomerName] = useState("");
@@ -384,6 +388,13 @@ export default function FurniturePage() {
             operatorName={operatorName}
             onOperatorNameChange={setOperatorName}
           />
+          <button
+            onClick={() => setMobileSidebarOpen(true)}
+            className="lg:hidden flex items-center justify-center p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-all shadow-sm cursor-pointer"
+            aria-label="Open Modeler Settings"
+          >
+            <SlidersHorizontal className="w-5 h-5" />
+          </button>
           <div className="h-4 border-l border-slate-800" />
           <Link
             href="/"
@@ -438,6 +449,8 @@ export default function FurniturePage() {
             onViewSettingsChange={setViewSettings}
             isPro={isPro}
             onUpgradeTrigger={() => setIsUpgradeModalOpen(true)}
+            mobileOpen={mobileSidebarOpen}
+            onMobileOpenChange={setMobileSidebarOpen}
           />
         </div>
 

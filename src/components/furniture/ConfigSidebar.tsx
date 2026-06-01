@@ -32,6 +32,8 @@ interface ConfigSidebarProps {
   onViewSettingsChange: (settings: ViewSettings) => void;
   isPro: boolean;
   onUpgradeTrigger: () => void;
+  mobileOpen: boolean;
+  onMobileOpenChange: (open: boolean) => void;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -189,9 +191,10 @@ export default function ConfigSidebar({
   onViewSettingsChange,
   isPro,
   onUpgradeTrigger,
+  mobileOpen,
+  onMobileOpenChange,
 }: ConfigSidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // ── Mutation helpers ──────────────────────────────────────
@@ -855,26 +858,16 @@ export default function ConfigSidebar({
         )}
       </aside>
 
-      {/* ── Mobile floating trigger ──────────────────── */}
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed bottom-24 right-4 z-[9999] flex items-center justify-center gap-2 px-4 h-12 rounded-full bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 font-bold transition-transform active:scale-95"
-        aria-label="Open Modeler Settings"
-      >
-        <SlidersHorizontal className="w-5 h-5" />
-        <span>Modeler Settings</span>
-      </button>
-
       {/* ── Mobile overlay & drawer ──────────────────── */}
       {mobileOpen && (
         <>
           {/* Scrim */}
           <div
-            className="lg:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-            onClick={() => setMobileOpen(false)}
+            className="lg:hidden fixed inset-0 z-[9990] bg-black/60 backdrop-blur-sm"
+            onClick={() => onMobileOpenChange(false)}
           />
           {/* Drawer */}
-          <aside className="lg:hidden fixed inset-y-0 left-0 z-[60] w-80 max-w-[85vw] bg-slate-900/95 backdrop-blur-xl border-r border-slate-800 shadow-2xl animate-in slide-in-from-left duration-300">
+          <aside className="lg:hidden fixed inset-y-0 left-0 z-[9991] w-80 max-w-[85vw] bg-slate-900/95 backdrop-blur-xl border-r border-slate-800 shadow-2xl animate-in slide-in-from-left duration-300">
             {sidebarContent}
           </aside>
         </>
