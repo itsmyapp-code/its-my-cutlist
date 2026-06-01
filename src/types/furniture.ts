@@ -10,6 +10,10 @@ export interface FurnitureDimensions {
   depth: number;
 }
 
+// Hardware and material options
+export type ShelfBaseOption = 'router_slots' | 'solid_12mm_biscuits';
+export type BackFitOption = 'nailed' | 'dado_joint';
+
 /** Hardware & material tolerance values used by the math engine (mm) */
 export interface GlobalTolerances {
   /** Thickness of carcass side/top/bottom panels */
@@ -29,7 +33,22 @@ export interface GlobalTolerances {
 }
 
 /** Supported furniture archetypes */
-export type FurnitureType = 'wardrobe' | 'chest_of_drawers';
+export type FurnitureType =
+  | 'wardrobe'
+  | 'chest_of_drawers'
+  | 'kitchen_unit'
+  | 'media_lowboard'
+  | 'storage_platform_bed'
+  | 'l_shaped_office_desk'
+  | 'alcove_unit'
+  | 'wall_hung_vanity'
+  | 'slimline_storage_tower'
+  | 'boot_bench'
+  | 'broom_cupboard'
+  | 'scribe_filler_panel'
+  | 'corner_post';
+
+export type DoorStyle = 'overlay' | 'inset';
 
 /** Material classification for filtering and export */
 export type MaterialType =
@@ -37,6 +56,58 @@ export type MaterialType =
   | '6mm Ply'
   | '12mm Drawer Box'
   | 'All Parts';
+
+/** Kitchen unit families used by the UK registry */
+export type KitchenUnitFamily =
+  | 'base'
+  | 'drawer_line'
+  | 'corner_base'
+  | 'wall'
+  | 'tall'
+  | 'appliance_base'
+  | 'bridge_wall'
+  | 'open_wall';
+
+/** Manufacturing panel output used by the kitchen registry pipeline */
+export interface ManufacturingPanel {
+  panelId: string;
+  parentUnitCode: string;
+  label: string;
+  cutLength: number;
+  cutWidth: number;
+  materialType: 'carcass_core' | 'back_ply' | 'front_face';
+  exposedBandedEdges: [boolean, boolean, boolean, boolean];
+}
+
+/** Kitchen unit registry entry */
+export interface KitchenUnitSpec {
+  code: string;
+  name: string;
+  family: KitchenUnitFamily;
+  width: number;
+  height: number;
+  depth: number;
+  frontLayout: Array<
+    | { kind: 'door'; label: string; height: number; quantity: 1 | 2; paired?: boolean }
+    | { kind: 'drawer_front'; label: string; height: number; quantity: number }
+    | { kind: 'blank'; label: string; height: number; quantity: 1 }
+  >;
+  usesTopStretchers: boolean;
+  serviceVoid?: number;
+  includeBottomPanel?: boolean;
+  includeTopPanel?: boolean;
+  includeBackPanel?: boolean;
+  frontStretcherDepth?: number;
+  rearStretcherDepth?: number;
+  shelfCount?: number;
+  shelfPositions?: number[];
+  shelfDepthReduction?: number;
+  shelfFrontSetback?: number;
+  shelfSideClipClearance?: number;
+  notes?: string;
+}
+
+
 
 /** A single manufactured component with 3D placement data */
 export interface ComponentPiece {
@@ -59,7 +130,7 @@ export interface ComponentPiece {
   /** Euler rotation angles [rx, ry, rz] in radians */
   rotation: [number, number, number];
   /** Component group for exploded view direction control */
-  group: 'side' | 'top_bottom' | 'back' | 'shelf' | 'drawer_front' | 'drawer_box' | 'drawer_bottom';
+  group: 'side' | 'top_bottom' | 'back' | 'shelf' | 'drawer_front' | 'drawer_box' | 'drawer_bottom' | 'door' | 'bore_marker';
   /** Parent drawer index (if part of a drawer assembly) */
   drawerIndex?: number;
 }
@@ -71,6 +142,17 @@ export interface FurnitureConfig {
   tolerances: GlobalTolerances;
   numberOfDrawers: number;
   numberOfShelves: number;
+  hasDoors: boolean;
+  shelfPositions?: number[];
+  drawerHeights?: number[];
+  // New options
+  shelfBase: ShelfBaseOption;
+  backFit: BackFitOption;
+  kitchenUnitCode?: string;
+  doorStyle: DoorStyle;
+  showLineBoring: boolean;
+  useFaceFrame: boolean;
+  
 }
 
 /** View-layer settings for the 3D canvas */
@@ -95,6 +177,17 @@ export const DEFAULT_TOLERANCES: GlobalTolerances = {
 export const DEFAULT_DIMENSIONS: Record<FurnitureType, FurnitureDimensions> = {
   wardrobe: { width: 900, height: 1800, depth: 600 },
   chest_of_drawers: { width: 800, height: 800, depth: 450 },
+  kitchen_unit: { width: 600, height: 720, depth: 560 },
+  media_lowboard: { width: 1600, height: 500, depth: 450 },
+  storage_platform_bed: { width: 1500, height: 450, depth: 2000 },
+  l_shaped_office_desk: { width: 1600, height: 750, depth: 1400 },
+  alcove_unit: { width: 900, height: 2200, depth: 560 },
+  wall_hung_vanity: { width: 800, height: 500, depth: 450 },
+  slimline_storage_tower: { width: 450, height: 2150, depth: 300 },
+  boot_bench: { width: 1200, height: 500, depth: 550 },
+  broom_cupboard: { width: 900, height: 2150, depth: 600 },
+  scribe_filler_panel: { width: 80, height: 2200, depth: 18 },
+  corner_post: { width: 90, height: 2200, depth: 90 },
 };
 
 /** Default full config */
@@ -104,6 +197,15 @@ export const DEFAULT_CONFIG: FurnitureConfig = {
   tolerances: { ...DEFAULT_TOLERANCES },
   numberOfDrawers: 4,
   numberOfShelves: 2,
+  hasDoors: false,
+  shelfPositions: [],
+  drawerHeights: [],
+  // Defaults for new options
+  shelfBase: 'router_slots',
+  backFit: 'nailed',
+  doorStyle: 'overlay',
+  showLineBoring: true,
+  useFaceFrame: false,
 };
 
 /** Default view settings */

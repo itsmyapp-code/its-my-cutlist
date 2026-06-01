@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { 
   Settings, 
+  Box,
   Terminal, 
   Grid, 
   Layers, 
@@ -40,7 +41,7 @@ import { VisualCanvas } from "./VisualCanvas";
 import { optimizeCutlist, Part, Scrap, StockSettings, LicenseState } from "@/utils/optimizer";
 import { auth, db } from "@/utils/firebase";
 import { onAuthStateChanged, User, signOut } from "firebase/auth";
-import { doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, onSnapshot } from "firebase/firestore";
+import { doc, setDoc, getDoc, collection, query, where, getDocs, addDoc, updateDoc, onSnapshot, deleteDoc } from "firebase/firestore";
 import AuthModal from "./AuthModal";
 import { SharedInventory } from "./SharedInventory";
 
@@ -175,6 +176,8 @@ export default function Workspace() {
   const [customerName, setCustomerName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [operatorName, setOperatorName] = useState("");
+  const [hasLoadedCloudMetadata, setHasLoadedCloudMetadata] = useState(false);
+  const localMetadataUpdatedAt = useRef(0);
 
   const isDeveloperUser = !!(
     user &&
@@ -239,6 +242,11 @@ export default function Workspace() {
     const storedOperator = localStorage.getItem("itsmycut_operator_name");
     if (storedOperator) setOperatorName(storedOperator);
 
+    const storedMetadataTime = localStorage.getItem("itsmycut_metadata_updated_at");
+    if (storedMetadataTime) {
+      localMetadataUpdatedAt.current = new Date(storedMetadataTime).getTime();
+    }
+
     const storedToken = localStorage.getItem("itsmycut_pro_token");
     const storedKey = localStorage.getItem("itsmycut_pro_key");
     if (storedToken && storedKey) {
@@ -295,8 +303,10 @@ export default function Workspace() {
 
   useEffect(() => {
     if (!mounted) return;
-    localStorage.setItem("itsmycut_job_history", JSON.stringify(jobHistory));
-  }, [jobHistory, mounted]);
+    if (!user) {
+      localStorage.setItem("itsmycut_job_history", JSON.stringify(jobHistory));
+    }
+  }, [jobHistory, user, mounted]);
 
   useEffect(() => {
     if (!mounted) return;
@@ -304,7 +314,62 @@ export default function Workspace() {
     localStorage.setItem("itsmycut_customer_name", customerName);
     localStorage.setItem("itsmycut_company_name", companyName);
     localStorage.setItem("itsmycut_operator_name", operatorName);
-  }, [jobName, customerName, companyName, operatorName, mounted]);
+
+    const nowIso = new Date().toISOString();
+    localStorage.setItem("itsmycut_metadata_updated_at", nowIso);
+    localMetadataUpdatedAt.current = new Date(nowIso).getTime();
+
+    if (user && hasLoadedCloudMetadata) {
+      const delayDebounceFn = setTimeout(async () => {
+        try {
+          const activeJobRef = doc(db, "users", user.uid, "activeJob", "current");
+          await setDoc(activeJobRef, {
+            jobName,
+            customerName,
+            companyName,
+            operatorName,
+            updatedAt: nowIso
+          }, { merge: true });
+          console.log("Cockpit metadata synced to Firestore!");
+        } catch (err) {
+          console.error("Error saving cockpit metadata to Firestore:", err);
+        }
+      }, 1000); // 1-second debounce
+
+      return () => clearTimeout(delayDebounceFn);
+    }
+  }, [jobName, customerName, companyName, operatorName, user, hasLoadedCloudMetadata, mounted]);
+
+  useEffect(() => {
+    const handleFurnitureExport = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const payload = customEvent.detail;
+      if (payload && Array.isArray(payload.pieces)) {
+        const newParts = payload.pieces.map((p: any, idx: number) => ({
+          id: `furn_${Date.now()}_${idx}`,
+          length: p.length,
+          width: p.width > 0 ? p.width : undefined,
+          quantity: p.quantity,
+          label: `${p.name} (${p.material})`,
+        }));
+        setParts(newParts);
+        
+        // Retrieve newly saved storage items if updated by the modeler
+        const storedJobName = localStorage.getItem("itsmycut_job_name");
+        if (storedJobName) setJobName(storedJobName);
+        const storedCustomer = localStorage.getItem("itsmycut_customer_name");
+        if (storedCustomer) setCustomerName(storedCustomer);
+        const storedCompany = localStorage.getItem("itsmycut_company_name");
+        if (storedCompany) setCompanyName(storedCompany);
+        const storedOperator = localStorage.getItem("itsmycut_operator_name");
+        if (storedOperator) setOperatorName(storedOperator);
+
+        alert("Success: Furniture parts exported to Cutlist workspace! Go back to Cutlist to run optimization.");
+      }
+    };
+    window.addEventListener("furniture-cutlist-export", handleFurnitureExport);
+    return () => window.removeEventListener("furniture-cutlist-export", handleFurnitureExport);
+  }, [mounted]);
 
   useEffect(() => {
     if (!isDrawerOpen || !showDrawerSection) return;
@@ -591,21 +656,54 @@ export default function Workspace() {
     }
   };
 
-  const handleSaveCurrentToHistory = () => {
-    const historyItem: JobHistoryEntry = {
-      id: `job_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      createdAt: new Date().toISOString(),
-      title: jobName.trim() || `${settings.materialType || "Workshop"} Job`,
-      customer: customerName.trim(),
-      company: companyName.trim(),
-      operator: operatorName.trim(),
-      snapshot: {
-        settings: JSON.parse(JSON.stringify(settings)),
-        parts: JSON.parse(JSON.stringify(parts)),
-        scraps: JSON.parse(JSON.stringify(scraps)),
-      },
+  const handleSaveCurrentToHistory = async () => {
+    const newJobTitle = jobName.trim() || `${settings.materialType || "Workshop"} Job`;
+    const newJobCustomer = customerName.trim();
+    const newJobCompany = companyName.trim();
+    const newJobOperator = operatorName.trim();
+    const createdAtStr = new Date().toISOString();
+
+    const snapshotData = {
+      settings: JSON.parse(JSON.stringify(settings)),
+      parts: JSON.parse(JSON.stringify(parts)),
+      scraps: JSON.parse(JSON.stringify(scraps)),
     };
-    setJobHistory((prev) => [historyItem, ...prev].slice(0, 75));
+
+    if (user) {
+      setCloudSyncing(true);
+      try {
+        const jobId = `job_${Date.now()}`;
+        await setDoc(doc(db, "users", user.uid, "jobs", jobId), {
+          jobName: newJobTitle,
+          customerName: newJobCustomer,
+          companyName: newJobCompany,
+          operatorName: newJobOperator,
+          settings: snapshotData.settings,
+          parts: snapshotData.parts,
+          scraps: snapshotData.scraps,
+          createdAt: createdAtStr,
+          updatedAt: createdAtStr,
+          email: user.email,
+        });
+        alert("Success: Job snapshot saved to Firestore cloud account!");
+      } catch (err: any) {
+        console.error("Error saving job snapshot to cloud:", err);
+        alert("Failed to save job snapshot to cloud. Please check your internet connection.");
+      } finally {
+        setCloudSyncing(false);
+      }
+    } else {
+      const historyItem: JobHistoryEntry = {
+        id: `job_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        createdAt: createdAtStr,
+        title: newJobTitle,
+        customer: newJobCustomer,
+        company: newJobCompany,
+        operator: newJobOperator,
+        snapshot: snapshotData,
+      };
+      setJobHistory((prev) => [historyItem, ...prev].slice(0, 75));
+    }
   };
 
   const handleLoadHistoryEntry = (entryId: string) => {
@@ -621,8 +719,21 @@ export default function Workspace() {
     setIsDrawerOpen(false);
   };
 
-  const handleDeleteHistoryEntry = (entryId: string) => {
-    setJobHistory((prev) => prev.filter((h) => h.id !== entryId));
+  const handleDeleteHistoryEntry = async (entryId: string) => {
+    if (user) {
+      if (confirm("Are you sure you want to delete this saved job from the cloud?")) {
+        try {
+          const jobRef = doc(db, "users", user.uid, "jobs", entryId);
+          await deleteDoc(jobRef);
+          // onSnapshot will automatically update state!
+        } catch (err) {
+          console.error("Error deleting job from cloud:", err);
+          alert("Failed to delete job from cloud.");
+        }
+      }
+    } else {
+      setJobHistory((prev) => prev.filter((h) => h.id !== entryId));
+    }
   };
 
   const formatDateTimeGb = (iso: string) => {
@@ -856,6 +967,133 @@ export default function Workspace() {
     return () => unsubscribe();
   }, []);
 
+  // Real-time listener for active cloud job
+  useEffect(() => {
+    if (!user) {
+      setHasLoadedCloudMetadata(false);
+      return;
+    }
+
+    const unsub = onSnapshot(
+      doc(db, "users", user.uid, "activeJob", "current"),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          
+          if (data.parts) {
+            setParts((prevParts) => {
+              const stringifiedPrev = JSON.stringify(prevParts);
+              const stringifiedNew = JSON.stringify(data.parts);
+              if (stringifiedPrev !== stringifiedNew) {
+                return data.parts;
+              }
+              return prevParts;
+            });
+          }
+          if (data.settings) {
+            setSettings((prevSettings) => {
+              const stringifiedPrev = JSON.stringify(prevSettings);
+              const stringifiedNew = JSON.stringify(data.settings);
+              if (stringifiedPrev !== stringifiedNew) {
+                return data.settings;
+              }
+              return prevSettings;
+            });
+          }
+          if (data.scraps) {
+            setScraps((prevScraps) => {
+              const stringifiedPrev = JSON.stringify(prevScraps);
+              const stringifiedNew = JSON.stringify(data.scraps);
+              if (stringifiedPrev !== stringifiedNew) {
+                return data.scraps;
+              }
+              return prevScraps;
+            });
+          }
+          // Check if cloud metadata is newer than local metadata
+          let isCloudNewer = true;
+          if (data.updatedAt) {
+            const cloudTime = new Date(data.updatedAt).getTime();
+            if (cloudTime < localMetadataUpdatedAt.current) {
+              isCloudNewer = false;
+            }
+          }
+
+          if (isCloudNewer) {
+            if (data.jobName !== undefined && typeof document !== "undefined" && document.activeElement?.id !== "job-name-input") {
+              setJobName(data.jobName);
+            }
+            if (data.customerName !== undefined && typeof document !== "undefined" && document.activeElement?.id !== "customer-name-input") {
+              setCustomerName(data.customerName);
+            }
+            if (data.companyName !== undefined && typeof document !== "undefined" && document.activeElement?.id !== "company-name-input") {
+              setCompanyName(data.companyName);
+            }
+            if (data.operatorName !== undefined && typeof document !== "undefined" && document.activeElement?.id !== "operator-name-input") {
+              setOperatorName(data.operatorName);
+            }
+            if (data.updatedAt) {
+              localStorage.setItem("itsmycut_metadata_updated_at", data.updatedAt);
+              localMetadataUpdatedAt.current = new Date(data.updatedAt).getTime();
+            }
+          }
+        }
+        setHasLoadedCloudMetadata(true);
+      },
+      (err) => {
+        console.error("Error listening to cloud active job:", err);
+        setHasLoadedCloudMetadata(true);
+      }
+    );
+
+    return () => unsub();
+  }, [user]);
+
+  // Real-time listener for saved cloud jobs
+  useEffect(() => {
+    if (!user) {
+      // Revert to localStorage if signed out
+      const storedHistory = localStorage.getItem("itsmycut_job_history");
+      if (storedHistory) {
+        try { setJobHistory(JSON.parse(storedHistory)); } catch (e) {}
+      } else {
+        setJobHistory([]);
+      }
+      return;
+    }
+
+    const unsub = onSnapshot(
+      collection(db, "users", user.uid, "jobs"),
+      (snapshot) => {
+        const items: JobHistoryEntry[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          items.push({
+            id: docSnap.id,
+            createdAt: data.createdAt || new Date().toISOString(),
+            title: data.jobName || data.title || "Untitled Job",
+            customer: data.customerName || data.customer || "",
+            company: data.companyName || data.company || "",
+            operator: data.operatorName || data.operator || "",
+            snapshot: {
+              settings: data.settings || {},
+              parts: data.parts || [],
+              scraps: data.scraps || [],
+            }
+          });
+        });
+        // Sort newest first
+        items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        setJobHistory(items);
+      },
+      (err) => {
+        console.error("Error listening to cloud saved jobs:", err);
+      }
+    );
+
+    return () => unsub();
+  }, [user]);
+
   const fetchCentralInventory = async (currentUser?: User | null) => {
     const activeUser = currentUser || user;
     if (!activeUser) return;
@@ -883,10 +1121,14 @@ export default function Workspace() {
     setCloudSyncSuccess(null);
     setCloudSyncError(null);
     try {
-      await setDoc(doc(db, "jobs", user.uid), {
+      await setDoc(doc(db, "users", user.uid, "activeJob", "current"), {
         settings,
         parts,
         scraps,
+        jobName,
+        customerName,
+        companyName,
+        operatorName,
         updatedAt: new Date().toISOString(),
         email: user.email
       });
@@ -907,12 +1149,16 @@ export default function Workspace() {
     setCloudSyncSuccess(null);
     setCloudSyncError(null);
     try {
-      const docSnap = await getDoc(doc(db, "jobs", user.uid));
+      const docSnap = await getDoc(doc(db, "users", user.uid, "activeJob", "current"));
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data.settings) setSettings(data.settings);
         if (data.parts) setParts(data.parts);
         if (data.scraps) setScraps(data.scraps);
+        if (data.jobName !== undefined) setJobName(data.jobName);
+        if (data.customerName !== undefined) setCustomerName(data.customerName);
+        if (data.companyName !== undefined) setCompanyName(data.companyName);
+        if (data.operatorName !== undefined) setOperatorName(data.operatorName);
         setCloudSyncSuccess("Cockpit loaded from cloud!");
         setTimeout(() => setCloudSyncSuccess(null), 3000);
       } else {
@@ -1365,23 +1611,60 @@ export default function Workspace() {
               )}
 
               {showDrawerSection && drawerPage === "history" && (
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest font-mono">Job History</h4>
-                  <button onClick={handleSaveCurrentToHistory} className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold uppercase tracking-wider">Save Current Job Snapshot</button>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-bold text-slate-350 uppercase tracking-wider">Saved Jobs History</h4>
+                    <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20">{jobHistory.length} Saved</span>
+                  </div>
+                  <button
+                    onClick={handleSaveCurrentToHistory}
+                    className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-150 cursor-pointer shadow-md hover:shadow-emerald-500/10"
+                  >
+                    Save Current Job Snapshot
+                  </button>
                   {jobHistory.length === 0 ? (
-                    <p className="text-[11px] text-slate-500">No history saved yet.</p>
+                    <div className="py-8 text-center bg-slate-950/30 border border-dashed border-slate-850 rounded-xl">
+                      <p className="text-xs text-slate-500">No saved history snapshots found.</p>
+                    </div>
                   ) : (
-                    <div className="max-h-[420px] overflow-y-auto space-y-2">
+                    <div className="max-h-[460px] overflow-y-auto space-y-3 pr-1 scrollbar-thin scrollbar-track-slate-900 scrollbar-thumb-slate-700">
                       {jobHistory.map((entry) => (
-                        <div key={entry.id} className="p-2.5 bg-slate-950 border border-slate-850 rounded-lg space-y-1.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-xs font-bold text-slate-200 truncate">{entry.title}</p>
-                            <p className="text-[10px] text-slate-500 font-mono shrink-0">{formatDateTimeGb(entry.createdAt)}</p>
+                        <div key={entry.id} className="p-3.5 bg-slate-950/80 border border-slate-800/80 rounded-xl space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <p className="text-sm font-bold text-slate-100 truncate" title={entry.title}>{entry.title}</p>
+                            <p className="text-xs text-slate-400 font-mono shrink-0 mt-0.5">{formatDateTimeGb(entry.createdAt)}</p>
                           </div>
-                          <p className="text-[10px] text-slate-500">Customer: {entry.customer || "-"} | Operator: {entry.operator || "-"}</p>
+                          
+                          <div className="grid grid-cols-1 gap-1.5 text-xs text-slate-300 bg-slate-900/40 p-2.5 rounded-lg border border-slate-850/60">
+                            <div className="flex justify-between items-center gap-2">
+                              <span className="text-slate-500 font-medium">Customer</span>
+                              <span className="text-slate-200 font-semibold text-right truncate max-w-[180px]" title={entry.customer}>{entry.customer || "-"}</span>
+                            </div>
+                            <div className="flex justify-between items-center gap-2 border-t border-slate-850/40 pt-1">
+                              <span className="text-slate-500 font-medium">Company</span>
+                              <span className="text-slate-200 font-semibold text-right truncate max-w-[180px]" title={entry.company}>{entry.company || "-"}</span>
+                            </div>
+                            <div className="flex justify-between items-center gap-2 border-t border-slate-850/40 pt-1">
+                              <span className="text-slate-500 font-medium">Operator</span>
+                              <span className="text-slate-200 font-semibold text-right truncate max-w-[180px]" title={entry.operator}>{entry.operator || "-"}</span>
+                            </div>
+                          </div>
+
                           <div className="flex gap-2">
-                            <button onClick={() => handleLoadHistoryEntry(entry.id)} className="flex-1 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded text-[10px] text-slate-200 font-bold uppercase flex items-center justify-center gap-1"><FolderOpen size={11} />Load</button>
-                            <button onClick={() => handleDeleteHistoryEntry(entry.id)} className="px-2 py-1.5 bg-rose-950/30 hover:bg-rose-900/40 border border-rose-900/40 rounded text-[10px] text-rose-300 font-bold"><Trash2 size={12} /></button>
+                            <button
+                              onClick={() => handleLoadHistoryEntry(entry.id)}
+                              className="flex-1 py-2 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-emerald-500/30 rounded-lg text-xs text-slate-200 font-bold uppercase flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                            >
+                              <FolderOpen size={13} className="text-emerald-400" />
+                              Load Job
+                            </button>
+                            <button
+                              onClick={() => handleDeleteHistoryEntry(entry.id)}
+                              className="px-2.5 py-2 bg-rose-950/20 hover:bg-rose-900/30 border border-rose-900/40 rounded-lg text-rose-400 hover:text-rose-300 transition-all cursor-pointer flex items-center justify-center"
+                              title="Delete snapshot"
+                            >
+                              <Trash2 size={13} />
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -1560,6 +1843,15 @@ export default function Workspace() {
                 Configure material profiles and optimize cutting layouts with live waste feedback.
               </p>
             </div>
+            <div className="flex items-center gap-2">
+              <Link
+                href="/furniture"
+                className="px-4 py-2 bg-slate-900 border border-slate-800 hover:border-emerald-500/30 text-slate-300 hover:text-emerald-400 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Box size={14} className="text-emerald-400" />
+                3D Furniture Modeler
+              </Link>
+            </div>
           </div>
 
           <div className="mb-5">
@@ -1571,10 +1863,10 @@ export default function Workspace() {
               badgeType="success"
             >
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <input value={jobName} onChange={(e) => setJobName(e.target.value)} placeholder="Job name" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
-                <input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
-                <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Company doing the cutting" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
-                <input value={operatorName} onChange={(e) => setOperatorName(e.target.value)} placeholder="Operator" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
+                <input id="job-name-input" value={jobName} onChange={(e) => setJobName(e.target.value)} placeholder="Job name" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
+                <input id="customer-name-input" value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Customer" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
+                <input id="company-name-input" value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Company doing the cutting" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
+                <input id="operator-name-input" value={operatorName} onChange={(e) => setOperatorName(e.target.value)} placeholder="Operator" className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none" />
               </div>
             </BentoBox>
           </div>
