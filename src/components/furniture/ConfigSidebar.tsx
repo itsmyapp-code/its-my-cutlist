@@ -858,11 +858,11 @@ export default function ConfigSidebar({
       {/* ── Mobile floating trigger ──────────────────── */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed bottom-6 right-4 z-40 flex items-center justify-center gap-2 px-4 h-12 rounded-full bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 font-bold transition-transform active:scale-95"
-        aria-label="Open settings"
+        className="lg:hidden fixed bottom-24 right-4 z-[9999] flex items-center justify-center gap-2 px-4 h-12 rounded-full bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 font-bold transition-transform active:scale-95"
+        aria-label="Open Modeler Settings"
       >
         <SlidersHorizontal className="w-5 h-5" />
-        <span>Config</span>
+        <span>Modeler Settings</span>
       </button>
 
       {/* ── Mobile overlay & drawer ──────────────────── */}

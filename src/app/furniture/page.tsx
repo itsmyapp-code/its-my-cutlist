@@ -394,7 +394,7 @@ export default function FurniturePage() {
           <div className="flex items-center gap-2">
             <HelpModal />
             <img src="/modeler-logo.png" alt="Modeler Logo" className="h-5 w-5 object-contain rounded" />
-            <h1 className="text-sm font-bold text-slate-100 tracking-tight">
+            <h1 className="hidden sm:block text-sm font-bold text-slate-100 tracking-tight">
               Parametric Furniture Modeler
             </h1>
           </div>
