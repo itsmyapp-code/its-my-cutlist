@@ -374,8 +374,8 @@ export default function ConfigSidebar({
 
         {/* Mobile close */}
         <button
-          onClick={() => setMobileOpen(false)}
-          className="lg:hidden flex items-center justify-center w-7 h-7 rounded-md text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
+          onClick={() => onMobileOpenChange(false)}
+          className="lg:hidden flex items-center justify-center w-7 h-7 rounded-md text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition-colors"
           aria-label="Close sidebar"
         >
           <PanelLeftClose className="w-4 h-4" />
