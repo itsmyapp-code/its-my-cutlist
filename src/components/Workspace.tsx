@@ -1459,13 +1459,12 @@ export default function Workspace() {
                   <span className="text-[10px] text-slate-400 truncate max-w-[120px]">{user.email}</span>
                 </span>
                 <button
-                  onClick={handleSaveJobToCloud}
-                  disabled={cloudSyncing}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 text-emerald-400 rounded-xl text-xs font-bold uppercase tracking-wider transition-all focus:outline-none disabled:opacity-50"
-                  title="Upload configuration to Firebase cloud storage"
+                  onClick={handleSignOut}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 text-rose-400 rounded-xl text-xs font-bold uppercase tracking-wider transition-all focus:outline-none"
+                  title="Sign out of your account"
                 >
-                  {cloudSyncing ? <RefreshCw size={14} className="animate-spin" /> : <Cloud size={14} />}
-                  <span>Sync</span>
+                  <LogOut size={14} />
+                  <span>Log Out</span>
                 </button>
               </div>
             ) : (
