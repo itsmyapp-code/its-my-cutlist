@@ -1,4 +1,4 @@
-const CACHE_NAME = 'its-my-cutlist-v2';
+const CACHE_NAME = 'its-my-cutlist-v3';
 const ASSETS = [
   '/',
   '/site.webmanifest',
